@@ -347,7 +347,7 @@ input[type="range"].hg-range::-webkit-slider-thumb { -webkit-appearance: none; w
 .desktop-controls {
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 25;
   padding: 8px 22px 10px; color: #bcc3cd;
-  background: #000;
+  background: transparent;
   background-image: none;
   backdrop-filter: none; filter: none; box-shadow: none;
   transition: none;
@@ -359,7 +359,7 @@ input[type="range"].hg-range::-webkit-slider-thumb { -webkit-appearance: none; w
   display: inline-flex; align-items: center; justify-content: center;
   color: #c8ced8; transition: background .16s, color .16s, transform .16s;
 }
-.player-control:hover { background: #000; color: #fff; }
+.player-control:hover { background: transparent; color: #fff; }
 .player-control:active { transform: scale(.94); }
 .player-control:disabled { color: #5e6570; cursor: default; }
 .player-control.is-on { color: var(--p-primary); }
@@ -545,7 +545,7 @@ button:focus-visible, input:focus-visible, [tabindex="0"]:focus-visible {
 }
 .hg-select-trigger:hover { background: var(--p-s4); }
 .hg-select-trigger[aria-expanded="true"] { border-color: var(--p-primary); }
-.hg-select-trigger.hg-select-media { min-width: 70px; border-color: transparent; background: #000; color: white; }
+.hg-select-trigger.hg-select-media { min-width: 70px; border-color: transparent; background: transparent; color: white; }
 .hg-select-menu {
   z-index: 75; overflow-y: auto; overscroll-behavior: contain; padding: 6px;
   border: 1px solid color-mix(in srgb, var(--p-on) 12%, transparent); border-radius: 9px;
