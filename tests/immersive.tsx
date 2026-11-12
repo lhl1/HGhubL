@@ -60,6 +60,7 @@ const click = async (label: string) => {
   const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find((element) => !element.closest("[inert]") && (element.getAttribute("aria-label") === label || element.textContent === label));
   if (!button) throw new Error(`Missing control: ${label}`);
   await act(async () => button.click());
+  if (label === "全屏") await act(async()=>new Promise<void>(resolve=>setTimeout(resolve,220)));
 };
 const player = () => [...document.querySelectorAll<HTMLElement>(".player-root")].at(-1)!;
 const controls = () => player().querySelector<HTMLElement>(".desktop-controls")!;
@@ -81,6 +82,9 @@ try {
   const playerBox = player().getBoundingClientRect(), contentBox = document.querySelector(".ref-main-content")!.getBoundingClientRect();
   assert(playerBox.x === contentBox.x && playerBox.y === contentBox.y && playerBox.width === contentBox.width && playerBox.height === contentBox.height, "ordinary playback fills the entire available desktop content area");
   assert(getComputedStyle(player()).clipPath === "none" && getComputedStyle(originalVideo).borderRadius === "0px" && getComputedStyle(player(), "::after").display === "none", "ordinary playback also removes inner clipping and decorative borders");
+  assert(getComputedStyle(originalVideo).transform === "none" && getComputedStyle(player()).willChange === "auto" && getComputedStyle(player().closest(".player-stack-page")!).animationName === "none", "presentation uses a stable unanimated playback page without redundant forced layers");
+  await key("t", {repeat:true}); await key("f", {repeat:true});
+  assert(!store.theater && !document.fullscreenElement, "held fullscreen shortcuts cannot repeatedly toggle presentation");
   assert(!!originalVideo && requests === 1, "context player loads one media source");
   originalVideo.currentTime = 37;
   await act(async () => originalVideo.dispatchEvent(new Event("timeupdate")));

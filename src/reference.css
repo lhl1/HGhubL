@@ -210,3 +210,9 @@ button:focus-visible, input:focus-visible { outline-color: var(--accent); }
 .player-immersive-back.is-hidden { visibility: hidden; pointer-events: none; }
 
 .player-window-drag { position: absolute; inset: 0 0 auto; height: 88px; z-index: 32; touch-action: none; }
+
+/* Desktop video has no rounded clipping: avoid redundant forced GPU layers. */
+.ref-desktop-shell .player-surface, .ref-desktop-shell .player-surface video,
+.player-root:fullscreen, .player-root:fullscreen video { transform: none; will-change: auto; }
+.player-stack-page { animation: none; background: #000; }
+.player-root::backdrop { background: #000; }

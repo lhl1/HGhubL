@@ -3,6 +3,7 @@ import { useStore } from "../store";
 import VideoSurface, { type VideoHandle } from "./VideoSurface";
 import PlayerControls from "./PlayerControls";
 import { IPlayF } from "../icons";
+import { enterPlayerFullscreen, isPlayerFullscreenPending } from "../fullscreen";
 import { usePlayerChrome } from "../immersive";
 
 type Props = {
@@ -46,6 +47,6 @@ export default function Player({ src, poster, autoPlay, active = true, muted, lo
       onToggle={() => video.current?.toggle()} onSeek={(value) => { video.current?.seek(value); setTime(value); }} onRate={setRate}
       onMute={() => onToggleMute ? onToggleMute() : store.setMuted((value) => !value)} onVolume={store.setVolume}
       onPip={() => { const element = video.current?.el(); if (element && document.pictureInPictureEnabled) void element.requestPictureInPicture().catch(() => {}); }}
-      onFullscreen={() => { if (document.fullscreenElement || store.nativeFullscreen) store.exitImmersive(); else void wrap.current?.requestFullscreen().catch(() => {}); }} />}
+      onFullscreen={() => { if (wrap.current && isPlayerFullscreenPending(wrap.current)) return; if (document.fullscreenElement || store.nativeFullscreen) store.exitImmersive(); else if (wrap.current) void enterPlayerFullscreen(wrap.current).catch(() => {}); }} />}
   </div>;
 }

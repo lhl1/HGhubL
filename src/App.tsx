@@ -167,16 +167,16 @@ function AppBody() {
 function DesktopShell() {
   const { theater, platform, nativeFullscreen, setNativeFullscreen } = useStore();
   useEffect(() => {
-    let alive = true, unlisten: (() => void) | undefined;
+    let alive = true, ticket = 0, unlisten: (() => void) | undefined;
     const native = getCurrentWindow();
-    const sync = () => { void native.isFullscreen().then((value) => { if (alive) setNativeFullscreen(value); }).catch(() => {}); };
+    const sync = () => { const current = ++ticket; void native.isFullscreen().then((value) => { if (alive && current === ticket) setNativeFullscreen(value); }).catch(() => {}); };
     sync(); void native.onResized(sync).then((off) => { if (alive) unlisten = off; else off(); }).catch(() => {});
     return () => { alive = false; unlisten?.(); };
   }, [setNativeFullscreen]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     document.documentElement.classList.toggle("ref-native-fullscreen", nativeFullscreen);
-    return () => document.documentElement.classList.remove("ref-native-fullscreen");
   }, [nativeFullscreen]);
+  useLayoutEffect(() => () => document.documentElement.classList.remove("ref-native-fullscreen"), []);
   return (
     <div className={`absolute inset-0 flex flex-col bg-canvas win-root ref-desktop-shell plat-${platform} ${theater ? "ref-theater" : ""}`}>
       <div className="relative flex-1 min-h-0">
@@ -241,7 +241,7 @@ function ShellInner({ collapsed, theater }: { collapsed: boolean; theater: boole
         {visited("category") && <div className={vis("category")}><Category wide={wide} /></div>}
         {visited("profile") && <div className={vis("profile")}><Profile wide={wide} /></div>}
         {stack.map((p, i) => (
-          <div key={p.key} className="absolute inset-0 z-30 bg-bg win-page-in">
+          <div key={p.key} className={`absolute inset-0 z-30 ${p.kind === "feed" ? "bg-black player-stack-page" : "bg-bg win-page-in"}`}>
             <StackPage page={p} onBack={pop} wide={wide} top={i === stack.length - 1 && !loginOpen && !preview} bottomInset={14} />
           </div>
         ))}
@@ -277,10 +277,10 @@ export default function App() {
     };
     document.addEventListener("fullscreenchange", sync); return () => document.removeEventListener("fullscreenchange", sync);
   }, [exitImmersive]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     document.documentElement.classList.toggle("hg-immersive", theater || nativeFullscreen || fs || browserFullscreen);
-    return () => document.documentElement.classList.remove("hg-immersive");
   }, [theater, nativeFullscreen, fs, browserFullscreen]);
+  useLayoutEffect(() => () => document.documentElement.classList.remove("hg-immersive"), []);
   // Capture before menu/dialog and player shortcuts: returning exits presentation, never the video page.
   useEffect(() => {
     const key = (event: KeyboardEvent) => {

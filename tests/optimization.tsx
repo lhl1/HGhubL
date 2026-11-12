@@ -8,6 +8,7 @@ import { createRecoveryBudget, createWheelGate, mergeUnique } from "../src/playb
 import { useAsync, usePaged } from "../src/hooks";
 import Feed from "../src/components/Feed";
 import VideoSurface, { type VideoHandle } from "../src/components/VideoSurface";
+import { enterPlayerFullscreen } from "../src/fullscreen";
 import PlayerControls from "../src/components/PlayerControls";
 import SelectMenu from "../src/components/SelectMenu";
 import Search from "../src/pages/Search";
@@ -66,6 +67,12 @@ try {
   assert(episodeGate(120, 0) === 1 && episodeGate(120, 100) === 0 && episodeGate(120, 350) === 0, "episode wheel gating rejects both inertia and closely spaced follow-up notches");
   assert(episodeGate(120, 1000) === 1 && episodeGate(-120, 1100) === 0, "episode switching cooldown also prevents accidental immediate direction reversals");
   assert(episodeGate(-120, 1900) === -1, "a deliberate previous-episode gesture works after cooldown");
+  const fullscreenHost = document.createElement('div');
+  let resolveFullscreen!:()=>void, nativeFullscreenRequests=0;
+  fullscreenHost.requestFullscreen = () => { nativeFullscreenRequests++; return new Promise<void>(resolve=>{resolveFullscreen=resolve;}); };
+  const entering=enterPlayerFullscreen(fullscreenHost), overlapping=enterPlayerFullscreen(fullscreenHost);
+  assert(entering===overlapping && nativeFullscreenRequests===1, "overlapping fullscreen input shares one native request until layout settles");
+  resolveFullscreen(); await entering;
   const budget = createRecoveryBudget();
   assert(budget.take() && budget.take() && !budget.take(), "automatic recovery stops after two attempts");
   budget.progress(0); budget.progress(100); assert(!budget.take(), "a seek cannot refill recovery budget");

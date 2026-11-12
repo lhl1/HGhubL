@@ -23,14 +23,14 @@ HGhubL 在原 HGhub 基础上，集中改进 **播放兼容、无边框窗口、
 
 ## 三步开始
 
-1. 打开 [Releases 下载页](https://github.com/lhl1/HGhubL/releases/latest)，下载 `HGhubL_1.5.8_windows_x64_portable.zip`。**只运行软件，无需下载源码包。**
+1. 打开 [Releases 下载页](https://github.com/lhl1/HGhubL/releases/latest)，下载 `HGhubL_1.5.9_windows_x64_portable.zip`。**只运行软件，无需下载源码包。**
 2. 完整解压到一个文件夹，双击 `HGhub.exe`。请让 `WebView2Loader.dll` 与 EXE 保持同目录。
 3. 默认进入放映；在左侧切换首页、探索、排行榜或分类。外观默认跟随系统，也可在设置中手动切换。
 
 | 文件 | 用途 |
 | --- | --- |
-| `HGhubL_1.5.8_windows_x64_portable.zip` | Windows x64 便携版，解压运行 |
-| `HGhubL_1.5.8_source.zip` | 对应发布提交的源码，供开发与复核 |
+| `HGhubL_1.5.9_windows_x64_portable.zip` | Windows x64 便携版，解压运行 |
+| `HGhubL_1.5.9_source.zip` | 对应发布提交的源码，供开发与复核 |
 | `SHA256SUMS.txt` | 发布文件的 SHA-256 校验值 |
 | `validation.json` | 本次构建与检查范围 |
 
@@ -39,7 +39,7 @@ HGhubL 在原 HGhub 基础上，集中改进 **播放兼容、无边框窗口、
 可用 PowerShell 核对下载文件：
 
 ```powershell
-Get-FileHash .\HGhubL_1.5.8_windows_x64_portable.zip -Algorithm SHA256
+Get-FileHash .\HGhubL_1.5.9_windows_x64_portable.zip -Algorithm SHA256
 ```
 
 将输出与同一 Release 中的 `SHA256SUMS.txt` 对照。升级时先退出旧版，再解压到新目录，保留旧目录便于回退；收藏、记录和设置仍使用原应用标识对应的数据目录。
@@ -175,7 +175,7 @@ Windows GNU 测试环境若缺少 Common Controls v6 manifest，改用：
 ./scripts/test-windows-gnu.ps1
 ```
 
-当前浏览器行为基线为 **274 项**；Rust 离线基线为 **38 通过、10 项联网测试默认忽略**。发布时以 Release 的 `validation.json` 为准。测试中使用模拟媒体和原生窗口桩，**不能视为本轮 Windows 原生全屏按键实机测试**。macOS / Android 也不在本轮发布验证范围内。
+当前浏览器行为基线为 **277 项**；Rust 离线基线为 **38 通过、10 项联网测试默认忽略**。发布时以 Release 的 `validation.json` 为准。测试中使用模拟媒体和原生窗口桩，**不能视为本轮 Windows 原生全屏按键实机测试**。macOS / Android 也不在本轮发布验证范围内。
 
 默认测试不会提交评分、登录真实账号或批量请求上游。联网烟测需单独、按需选择；详情见 [验证说明](docs/verification.md)。
 

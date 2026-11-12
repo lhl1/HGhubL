@@ -11,6 +11,7 @@ import { setBackHandler } from "../back";
 import { createRecoveryBudget, createWheelGate } from "../playback-policy";
 import { usePlayerChrome } from "../immersive";
 import { useFeedViewport } from "../feed-viewport";
+import { enterPlayerFullscreen, isPlayerFullscreenPending } from "../fullscreen";
 import { useVideoRating } from "../ratings";
 import {
   IBack, IBoltF, IChevR, IChevronDown, IChevronUp, IClose, ICommentF, ICompress, IExpand, IFileText, IHeart, IHeartF,
@@ -350,8 +351,8 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
         case " ": e.preventDefault(); videoRef.current?.toggle(); break;
         case "ArrowLeft": e.preventDefault(); videoRef.current?.seek(Math.max(0, time - 5)); break;
         case "ArrowRight": e.preventDefault(); videoRef.current?.seek(time + 5); break;
-        case "f": case "F": toggleFull(); break;
-        case "t": case "T": setTheater((v) => !v); break;
+        case "f": case "F": if (!e.repeat) { e.preventDefault(); toggleFull(); } break;
+        case "t": case "T": if (!e.repeat) { e.preventDefault(); setTheater((v) => !v); } break;
         case "m": case "M": setMuted((v) => !v); break;
         case "l": case "L": onLike(); break;
         case "s": case "S": onFav(); break;
@@ -381,10 +382,10 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
 
   const toggleFull = () => {
     const el = boxRef.current?.parentElement;
-    if (!el) return;
+    if (!el || isPlayerFullscreenPending(el)) return;
     viewport.prepare();
     if (document.fullscreenElement || store.nativeFullscreen) store.exitImmersive();
-    else el.requestFullscreen().catch(() => {});
+    else void enterPlayerFullscreen(el).catch(() => {});
   };
 
   /* —— 长按 2x（上滑锁定） / 横拖定位 / 单击暂停 —— */

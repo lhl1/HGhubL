@@ -1,6 +1,6 @@
 # 实现详解：从页面到播放器
 
-本文对应 HGhubL 1.5.8，说明本轮适配的结构、问题和取舍。按模块读即可，不需要先了解 Tauri。
+本文对应 HGhubL 1.5.9，说明本轮适配的结构、问题和取舍。按模块读即可，不需要先了解 Tauri。
 
 ## 1. 为什么保留原框架
 
@@ -172,3 +172,11 @@ Rust 的 `discovery.rs` 对允许的分区路径发起请求，限制页面大�
 ## 13. 透明播放控制区
 
 1.5.8 将底部控制区背景改为 transparent，保留 background-image: none、backdrop-filter: none、filter: none 和 box-shadow: none。按钮悬停、倍速触发按钮以及窄窗口音量条也不再铺黑色底块。控制区保持正常不透明度，仅背景透出视频；视频比例带来的留黑仍由播放舞台呈现，展开的选集/评分菜单保持可读背景。
+
+## 14. 全屏切换稳定性
+
+全屏 API 是异步请求。1.5.9 在同一播放器上共享未完成请求，等两次动画帧或 200ms 兜底后解锁，避免重复输入叠加。F/T 忽略键盘自动重复；原生窗口状态查询附带代次，只让最新结果更新全屏标记。
+
+全局沉浸样式从普通 effect 改为 layout effect，在绘制前同步；播放页取消入场动画，桌面视频移除旧圆角方案残留的强制 transform/will-change，减少布局和合成层切换。全屏 backdrop 固定黑色，透明控制栏不变。实现层不截图覆盖视频、不重新取址、不隐藏视频来掩盖过渡。
+
+参考：[Fullscreen API](https://developer.mozilla.org/en-US/docs/Web/API/Element/requestFullscreen)、[will-change](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/will-change)。这些资料说明 API 与浏览器提示的行为，不是对特定 WebView2 显卡故障的证明。
