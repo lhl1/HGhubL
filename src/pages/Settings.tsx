@@ -1,0 +1,279 @@
+import { useEffect, useState, type ReactNode } from "react";
+import { api, APP_VERSION, hostOf, logLine, platform, type UpdateInfo } from "../api";
+import { useStore } from "../store";
+import { Modal, Toggle } from "../components/ui";
+import LinePicker from "../components/LinePicker";
+import SelectMenu from "../components/SelectMenu";
+import { PLAYBACK_RATES } from "../preferences";
+import { IBack, IBoltF, IBroom, IChevR, IHeart, IInfo, ILink, ILockF, IMoon, IRefresh, ISettings, ISun, Logo } from "../icons";
+
+/* 独立设置页：线路 / 外观 / 本地数据 / 清理缓存 / 网络诊断 / 关于
+   入口：Windows 侧栏「设置」、Android「我的」右上角齿轮 */
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return <section className="hg-settings-section"><h2>{title}</h2><div className="rounded-(--r-md) bg-s2 divide-y divide-s3">{children}</div></section>;
+}
+
+function PreferenceToggle({ title, description, on, onChange }: { title: string; description: string; on: boolean; onChange: (on: boolean) => void }) {
+  return <div className="hg-preference-row"><div><div>{title}</div><small>{description}</small></div><Toggle label={title} on={on} onChange={onChange} /></div>;
+}
+
+export default function Settings({ onBack, wide }: { onBack: () => void; wide: boolean }) {
+  const { theme, setTheme, favs, history, strictSecurity, strictSecurityReady, securityPending, cliRelaxed, setStrictSecurity, toast, preferences, setPreferences } = useStore();
+  const [about, setAbout] = useState(false);
+  const [clearOpen, setClearOpen] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [lineOpen, setLineOpen] = useState(false);
+  const [lineBase, setLineBase] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [update, setUpdate] = useState<UpdateInfo | null>(null);
+
+  const readLine = () => {
+    api.lineState().then((s) => setLineBase(s.base)).catch(() => {});
+  };
+  useEffect(readLine, []);
+
+  const checkUpdate = async () => {
+    setChecking(true);
+    try {
+      const info = await api.checkUpdate();
+      if (info.has_update) setUpdate(info);
+      else toast(`已是最新版本 v${info.current}`, "ok");
+    } catch (e) {
+      toast((e as Error).message || "检查更新失败", "info");
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  return (
+    <div className="absolute inset-0 bg-bg flex flex-col ref-settings-page">
+      <div className="shrink-0 relative overflow-hidden bg-s1" style={{ paddingTop: "var(--sat, 0px)" }}>
+        <div className="absolute inset-0 pointer-events-none" style={{ background: "radial-gradient(90% 120% at 100% 0%, var(--p-pc) 0%, transparent 60%)", opacity: 0.32 }} />
+        <div className="relative px-3 pt-2 pb-4">
+          <button onClick={onBack} aria-label="返回" className="w-10 h-10 rounded-full flex items-center justify-center text-on hover:bg-s3 pressable"><IBack size={20} /></button>
+          <div className="px-2 mt-1 flex items-end justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="w-9 h-9 rounded-(--r-sm) bg-pc text-on-pc flex items-center justify-center"><ISettings size={20} strokeWidth={1.7} /></span>
+                <span className="text-[24px] font-bold tracking-wide text-on">设置</span>
+              </div>
+              <div className="text-[11px] text-mut mt-1">播放偏好 · 外观 · 本地数据</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 scroll-y px-4 pt-1 pb-10">
+        <div className={wide ? "max-w-[720px] mx-auto" : ""}>
+          <Section title="外观">
+            <div className="flex items-center gap-3 px-3.5 py-3">
+              <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary">{theme === "dark" ? <IMoon size={16} /> : <ISun size={16} />}</span>
+              <div className="flex-1">
+                <div className="text-[12.5px] text-on">界面外观</div>
+                <div className="text-[10.5px] text-mut">跟随系统，或选择你喜欢的配色</div>
+              </div>
+              <div className="ref-theme-segment" role="group" aria-label="界面外观">{([{ value: "system", label: "跟随系统" }, { value: "light", label: "浅色" }, { value: "dark", label: "深色" }] as const).map((option) => <button key={option.value} aria-pressed={theme === option.value} onClick={() => setTheme(option.value)}>{option.label}</button>)}</div>
+            </div>
+          </Section>
+
+          <Section title="播放">
+            <PreferenceToggle title="自动播放" description="进入播放页后自动开始，关闭后手动播放" on={preferences.autoplay} onChange={(autoplay) => setPreferences({ autoplay })} />
+            <PreferenceToggle title="自动下一集" description="当前集结束后继续播放本剧下一集" on={preferences.autoNext} onChange={(autoNext) => setPreferences({ autoNext })} />
+            <div className="hg-preference-row"><div><div>默认倍速</div><small>新打开的播放器使用此速度</small></div>
+              <SelectMenu label="默认倍速" value={String(preferences.defaultRate)} options={PLAYBACK_RATES.map((rate) => ({ value: String(rate), label: `${rate}x` }))} onChange={(value) => setPreferences({ defaultRate: Number(value) })} />
+            </div>
+            <PreferenceToggle title="增强缓冲" description="适当增加有上限的内存缓冲，优先保证当前集播放" on={preferences.enhancedBuffer} onChange={(enhancedBuffer) => setPreferences({ enhancedBuffer })} />
+            <div className="hg-settings-hint">空格 播放/暂停 · ← → 快进/快退 · Q/E 上/下一集 · F 全屏 · M 静音</div>
+          </Section>
+
+          <Section title="浏览">
+            <PreferenceToggle title="播放前显示详情" description="点选目录卡片后先查看简介与选集；观看记录可直接续播" on={preferences.previewBeforePlay} onChange={(previewBeforePlay) => setPreferences({ previewBeforePlay })} />
+            <div className="hg-preference-row"><div><div>默认目录排列</div><small>页面内临时切换不修改此默认值</small></div>
+              <SelectMenu label="默认目录排列" value={preferences.catalogLayout} options={[{ value: "grid", label: "封面网格" }, { value: "list", label: "详细列表" }]} onChange={(value) => setPreferences({ catalogLayout: value as "grid" | "list" })} />
+            </div>
+          </Section>
+
+          <Section title="本地数据">
+            <div className="flex items-center gap-3 px-3.5 py-3">
+              <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary"><IHeart size={16} /></span>
+              <div className="flex-1">
+                <div className="text-[12.5px] text-on">本地喜欢</div>
+                <div className="text-[10.5px] text-mut">{favs.length} 部收藏 · {history.length} 条观看记录</div>
+              </div>
+            </div>
+            <button onClick={() => setClearOpen(true)} className="w-full flex items-center gap-3 px-3.5 py-3 text-left pressable">
+              <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary"><IBroom size={16} /></span>
+              <div className="flex-1">
+                <div className="text-[12.5px] text-on">清理缓存</div>
+                <div className="text-[10.5px] text-mut">清除封面与播放缓存，保留观看记录</div>
+              </div>
+              <IChevR size={15} className="text-mut" />
+            </button>
+          </Section>
+
+          <Section title="网络">
+            <button onClick={() => setLineOpen(true)} className="w-full flex items-center gap-3 px-3.5 py-3 text-left pressable">
+              <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary"><IBoltF size={16} /></span>
+              <div className="flex-1 min-w-0">
+                <div className="text-[12.5px] text-on">线路</div>
+                <div className="text-[10.5px] text-mut truncate">{lineBase ? hostOf(lineBase) : "固定线路 1（默认）"}</div>
+              </div>
+              <IChevR size={15} className="text-mut" />
+            </button>
+            <div className="flex items-center gap-3 px-3.5 py-3">
+              <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary"><ILockF size={15} /></span>
+              <div className="flex-1 min-w-0">
+                <div className="text-[12.5px] text-on">严格安全模式</div>
+                <div className="text-[10.5px] text-mut">
+                  {cliRelaxed
+                    ? "已由启动参数 --no-strict 切换为兼容模式；可手动重新开启"
+                    : "默认开启，防上游投毒与内网探测；若导致正文或特殊代理异常可关闭（或用 --no-strict 启动）"}
+                </div>
+              </div>
+              <Toggle
+                on={strictSecurity}
+                disabled={!strictSecurityReady || securityPending}
+                onChange={(on) => {
+                  void setStrictSecurity(on).then(() => {
+                    toast(on ? "已开启严格安全模式" : "已切换为兼容模式（关闭激进清洗与守卫）", "info");
+                  }).catch(() => toast("安全设置保存失败，已保持原模式", "info"));
+                }}
+                label="严格安全模式"
+              />
+            </div>
+            {/* 打不开时先点这里：把 DNS / 代理 / HTTP 结果复制给维护者 */}
+            <button onClick={async () => {
+              try {
+                const text = JSON.stringify(await api.netDiag(), null, 2);
+                logLine(`[net_diag] ${text}`);
+                await navigator.clipboard?.writeText(text);
+                toast("网络诊断结果已复制", "ok");
+              } catch (e) {
+                toast((e as Error).message || "诊断失败", "info");
+              }
+            }} className="w-full flex items-center gap-3 px-3.5 py-3 text-left pressable">
+              <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary"><ILink size={16} /></span>
+              <div className="flex-1">
+                <div className="text-[12.5px] text-on">网络诊断</div>
+                <div className="text-[10.5px] text-mut">检测 DNS / 系统代理 / 官网连通性</div>
+              </div>
+              <IChevR size={15} className="text-mut" />
+            </button>
+          </Section>
+
+          <Section title="其他">
+            <button onClick={checkUpdate} disabled={checking} className="w-full flex items-center gap-3 px-3.5 py-3 text-left pressable disabled:opacity-60">
+              <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary"><IRefresh size={16} /></span>
+              <div className="flex-1">
+                <div className="text-[12.5px] text-on">检查更新</div>
+                <div className="text-[10.5px] text-mut">{checking ? "检查中…" : `当前 v${APP_VERSION} · 对比 GitHub Release`}</div>
+              </div>
+              <IChevR size={15} className="text-mut" />
+            </button>
+            <button onClick={() => setAbout(true)} className="w-full flex items-center gap-3 px-3.5 py-3 text-left pressable">
+              <span className="w-8 h-8 rounded-full bg-s3 flex items-center justify-center text-primary"><IInfo size={16} /></span>
+              <div className="flex-1">
+                <div className="text-[12.5px] text-on">关于 HGhub</div>
+                <div className="text-[10.5px] text-mut">ENIAC · 版本 {APP_VERSION}</div>
+              </div>
+              <IChevR size={15} className="text-mut" />
+            </button>
+          </Section>
+
+          <div className="text-center text-[10px] text-dim mt-5">HGhub {APP_VERSION} · {platform === "android" ? "Android" : platform === "macos" ? "macOS" : "Windows"} 客户端 · ENIAC</div>
+        </div>
+      </div>
+
+      <LinePicker open={lineOpen} onClose={() => { setLineOpen(false); readLine(); }} />
+
+      <Modal open={about} onClose={() => setAbout(false)} width={392}>
+        <div className="p-5">
+          <div className="flex items-center gap-3">
+            <Logo size={46} className="shrink-0" />
+            <div>
+              <div className="text-[16px] font-bold text-on leading-tight">HGhub</div>
+              <div className="text-[11px] text-mut mt-0.5">黄果短剧 · 第三方客户端 v{APP_VERSION}</div>
+            </div>
+          </div>
+
+          <p className="text-[12px] text-on/70 leading-relaxed mt-4">
+            基于 Rust + Tauri 2 构建的跨平台客户端，支持 Windows、macOS 与 Android。
+            界面遵循 Fluent 设计语言，播放器采用沉浸式竖屏信息流。
+          </p>
+
+          <div className="mt-4 rounded-(--r-sm) bg-s3/60 p-3 text-[11px] text-mut leading-relaxed">
+            本项目仅供学习与交流，所有内容均来自上游站点，客户端不存储、不分发任何视频内容。
+            请于 24 小时内删除相关资源，并支持正版。
+          </div>
+
+          <div className="mt-4 divide-y divide-s3">
+            <div className="flex items-center gap-2 py-2.5"><IInfo size={15} className="text-mut" /><span className="text-[12px] text-on/85">署名</span><span className="ml-auto text-[12px] font-semibold text-primary">ENIAC</span></div>
+            <button onClick={() => { navigator.clipboard?.writeText("https://github.com/lhl1/HGhubL").then(() => toast("仓库地址已复制", "ok")).catch(() => {}); }}
+              className="w-full flex items-center gap-2 py-2.5 text-left pressable">
+              <ILink size={15} className="text-mut" />
+              <span className="text-[12px] text-on/85">github.com/lhl1/HGhubL</span>
+              <span className="ml-auto text-[10.5px] text-primary">复制</span>
+            </button>
+            <button onClick={() => { navigator.clipboard?.writeText("https://huangguoai.com").then(() => toast("站点地址已复制", "ok")).catch(() => {}); }}
+              className="w-full flex items-center gap-2 py-2.5 text-left pressable">
+              <ILink size={15} className="text-mut" />
+              <span className="text-[12px] text-on/85">huangguoai.com</span>
+              <span className="ml-auto text-[10.5px] text-primary">复制</span>
+            </button>
+            <div className="flex items-center gap-2 py-2.5">
+              <IInfo size={15} className="text-mut" />
+              <span className="text-[12px] text-on/85">PolyForm Noncommercial 1.0.0</span>
+              <span className="ml-auto text-[10.5px] text-mut">仅限非商业</span>
+            </div>
+          </div>
+
+          <button onClick={() => setAbout(false)} className="mt-4 w-full h-9 rounded-(--r-ctl) bg-s3 text-[12.5px] text-on pressable">知道了</button>
+        </div>
+      </Modal>
+
+      <Modal open={clearOpen} onClose={() => setClearOpen(false)} width={330}>
+        <div className="p-5">
+          <div className="text-[14.5px] font-bold text-on">清理缓存</div>
+          <p className="text-[12px] text-mut leading-relaxed mt-2">
+            只清除封面与播放列表缓存（解密图 / m3u8）。收藏、观看记录、搜索历史与登录状态都会保留。
+          </p>
+          <div className="flex gap-2 mt-5">
+            <button onClick={() => setClearOpen(false)} className="flex-1 h-9 rounded-(--r-ctl) bg-s3 text-[12.5px] text-on/80 pressable">取消</button>
+            <button disabled={clearing} onClick={async () => {
+              setClearing(true);
+              try {
+                await api.clearCache(); setClearOpen(false); toast("缓存已清理", "ok");
+              } catch { toast("缓存清理失败，请重试", "info"); }
+              finally { setClearing(false); }
+            }} className="flex-1 h-9 rounded-(--r-ctl) bg-primary text-[12.5px] font-semibold text-on-primary pressable disabled:opacity-60">
+              {clearing ? "清理中…" : "确定清理"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={!!update?.has_update} onClose={() => setUpdate(null)} width={392}>
+        <div className="p-5">
+          <div className="text-[15px] font-bold text-on">发现新版本</div>
+          <p className="text-[11.5px] text-mut mt-1.5">
+            v{update?.current} → <b className="text-on">v{update?.latest}</b>
+            {update?.published_at ? ` · ${update.published_at.slice(0, 10)}` : ""}
+          </p>
+          {!!update?.notes && (
+            <div className="mt-3 max-h-[180px] scroll-y rounded-(--r-sm) bg-s2 p-3 text-[11px] text-mut whitespace-pre-wrap leading-relaxed">{update.notes}</div>
+          )}
+          <div className="flex gap-2 mt-4">
+            <button onClick={() => setUpdate(null)} className="flex-1 h-9 rounded-(--r-ctl) bg-s3 text-[12.5px] text-on/80 pressable">稍后</button>
+            <button onClick={() => {
+              if (!update) return;
+              api.openUrl(update.url).catch(() => {
+                navigator.clipboard?.writeText(update.url).then(() => toast("下载地址已复制", "ok")).catch(() => {});
+              });
+            }} className="flex-1 h-9 rounded-(--r-ctl) bg-primary text-[12.5px] font-semibold text-on-primary pressable">前往下载</button>
+          </div>
+          <div className="text-[10px] text-dim mt-2.5 break-all">{update?.url}</div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
