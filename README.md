@@ -23,14 +23,14 @@ HGhubL 在原 HGhub 基础上，集中改进 **播放兼容、无边框窗口、
 
 ## 三步开始
 
-1. 打开 [Releases 下载页](https://github.com/lhl1/HGhubL/releases/latest)，下载 `HGhubL_1.5.7_windows_x64_portable.zip`。**只运行软件，无需下载源码包。**
+1. 打开 [Releases 下载页](https://github.com/lhl1/HGhubL/releases/latest)，下载 `HGhubL_1.5.8_windows_x64_portable.zip`。**只运行软件，无需下载源码包。**
 2. 完整解压到一个文件夹，双击 `HGhub.exe`。请让 `WebView2Loader.dll` 与 EXE 保持同目录。
 3. 默认进入放映；在左侧切换首页、探索、排行榜或分类。外观默认跟随系统，也可在设置中手动切换。
 
 | 文件 | 用途 |
 | --- | --- |
-| `HGhubL_1.5.7_windows_x64_portable.zip` | Windows x64 便携版，解压运行 |
-| `HGhubL_1.5.7_source.zip` | 对应发布提交的源码，供开发与复核 |
+| `HGhubL_1.5.8_windows_x64_portable.zip` | Windows x64 便携版，解压运行 |
+| `HGhubL_1.5.8_source.zip` | 对应发布提交的源码，供开发与复核 |
 | `SHA256SUMS.txt` | 发布文件的 SHA-256 校验值 |
 | `validation.json` | 本次构建与检查范围 |
 
@@ -39,7 +39,7 @@ HGhubL 在原 HGhub 基础上，集中改进 **播放兼容、无边框窗口、
 可用 PowerShell 核对下载文件：
 
 ```powershell
-Get-FileHash .\HGhubL_1.5.7_windows_x64_portable.zip -Algorithm SHA256
+Get-FileHash .\HGhubL_1.5.8_windows_x64_portable.zip -Algorithm SHA256
 ```
 
 将输出与同一 Release 中的 `SHA256SUMS.txt` 对照。升级时先退出旧版，再解压到新目录，保留旧目录便于回退；收藏、记录和设置仍使用原应用标识对应的数据目录。
@@ -54,7 +54,7 @@ Get-FileHash .\HGhubL_1.5.7_windows_x64_portable.zip -Algorithm SHA256
 | **分类与排行榜** | 分类、题材、完结状态筛选，卡片 / 详细列表切换，保留榜单原始名次 |
 | **评分优先** | 综合分直接显示；已加载作品按分数降序，无评分排后，同分保留原顺序 |
 | **播放栏选集** | 底部向上展开，支持集数 / 标题查找、倒序和键盘操作，不挤占画面 |
-| **纯黑播放背景** | 底部控制条与播放菜单采用不透明纯黑，去掉渐变、封面氛围和模糊叠层 |
+| **透明播放控制区** | 底部控制条全透明，无底色、渐变和模糊；按钮及进度条清晰显示 |
 | **全屏与全屏窗口** | 隐藏顶部、侧栏、说明和社交元素，操作时短暂显示底部控件 |
 | **播放偏好** | 自动播放、自动下一集、倍速、音量、增强缓冲与播放前预览 |
 | **本地记录** | 追剧、观看进度、搜索历史；清理媒体缓存时保留这些数据 |

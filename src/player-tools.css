@@ -31,7 +31,7 @@
   .player-timecode { font-size: 10px; gap: 2px; margin-left: 2px; }
   .player-episode-count { display: none; }
   .player-volume { position: relative; }
-  .player-volume-slider { position: absolute; bottom: 37px; right: 0; background: #1d222af7; border-radius: 7px; }
+  .player-volume-slider { position: absolute; bottom: 37px; right: 0; background: transparent; border-radius: 7px; }
 }
 
 .player-tool-error button { display: flex; padding: 8px 12px; border-radius: 8px; background: #ff835a25; color: #ffbd9f; }
