@@ -22,6 +22,7 @@ const VideoSurface = forwardRef<VideoHandle, Props>(function VideoSurface(props,
   const videoRef = useRef<HTMLVideoElement>(null), hlsRef = useRef<Hls | null>(null);
   const callbacks = useRef(props); callbacks.current = props;
   const wanted = useRef(autoPlay), released = useRef(false), releaseTimer = useRef<number | undefined>(undefined);
+  const pendingSeek = useRef<{ time: number; at: number } | null>(null);
   const [ready, setReady] = useState(false);
   const visible = () => callbacks.current.active !== false && document.visibilityState !== "hidden";
   const report = (message: string) => callbacks.current.onError?.(message);
@@ -53,7 +54,12 @@ const VideoSurface = forwardRef<VideoHandle, Props>(function VideoSurface(props,
     play: () => intent(true), pause: () => intent(false), toggle: () => intent(videoRef.current?.paused ?? true),
     seek: (time) => {
       const video = videoRef.current;
-      if (video && Number.isFinite(time)) video.currentTime = Math.max(0, Math.min(Number.isFinite(video.duration) ? video.duration : time, time));
+      if (video && Number.isFinite(time)) {
+        const target = Math.max(0, Math.min(Number.isFinite(video.duration) ? video.duration : time, time));
+        pendingSeek.current = { time: target, at: performance.now() };
+        video.currentTime = target;
+        callbacks.current.onTime?.(target);
+      }
     },
     rate: (value) => { if (videoRef.current && Number.isFinite(value) && value > 0) videoRef.current.playbackRate = value; },
     mute: (value) => { if (videoRef.current) videoRef.current.muted = value; },
@@ -87,7 +93,7 @@ const VideoSurface = forwardRef<VideoHandle, Props>(function VideoSurface(props,
     const video = videoRef.current; if (!video || !src) return;
     let disposed = false, failed = false;
     let lastTime = -1, lastProgress = performance.now();
-    released.current = false; setReady(false); applySettings();
+    pendingSeek.current = null; released.current = false; setReady(false); applySettings();
     const url = isLocalMedia(src) ? src : mediaUrl(src);
     const fail = (message: string) => {
       if (disposed || failed) return;
@@ -137,7 +143,16 @@ const VideoSurface = forwardRef<VideoHandle, Props>(function VideoSurface(props,
       callbacks.current.onSize?.(video.videoWidth, video.videoHeight);
       start();
     }}
-    onTimeUpdate={(event) => callbacks.current.onTime?.(event.currentTarget.currentTime)}
+    onTimeUpdate={(event) => {
+      const current = event.currentTarget.currentTime, pending = pendingSeek.current;
+      if (pending && Math.abs(current - pending.time) > .75 && performance.now() - pending.at < 3000) return;
+      if (pending && !event.currentTarget.seeking) pendingSeek.current = null;
+      callbacks.current.onTime?.(current);
+    }}
+    onSeeked={(event) => {
+      const current = event.currentTarget.currentTime, pending = pendingSeek.current;
+      if (!pending || Math.abs(current - pending.time) <= .75) { pendingSeek.current = null; callbacks.current.onTime?.(current); }
+    }}
     onPause={() => callbacks.current.onPause?.()} onWaiting={() => callbacks.current.onWaiting?.()}
     onPlaying={() => callbacks.current.onPlaying?.()}
     onError={(event) => { if (event.currentTarget.error && event.currentTarget.hasAttribute("src")) report(`媒体加载失败 (${event.currentTarget.error.code})`); }}

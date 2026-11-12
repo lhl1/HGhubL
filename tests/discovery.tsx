@@ -3,7 +3,6 @@ import { createRoot } from "react-dom/client";
 import App from "../src/App";
 import { api } from "../src/api";
 import { AppProvider, useStore } from "../src/store";
-import { normalizeHotWords } from "../src/hot-words";
 import { DISCOVERY_SECTIONS, videoPage } from "../src/discovery";
 import { PREFERENCES_KEY } from "../src/preferences";
 import "../src/index.css";
@@ -76,8 +75,6 @@ try {
     style.textContent = ".ref-home-hero-cover .bg-s3,.ref-card-cover .bg-s3,.ref-topic-cover .bg-s3,.ref-article-cover .bg-s3{background:linear-gradient(140deg,#233b55,#73544d);color:#ffffff38}.ref-card-grid>div:nth-child(2n) .bg-s3{background:linear-gradient(140deg,#2c5253,#62747b)}.ref-home-hero-cover .bg-s3{background:radial-gradient(ellipse at 80% 30%,#758995,#20384d 70%)}";
     document.head.append(style);
   } else {
-    const terms = normalizeHotWords([{word:"#都市 #成长 #冒险",heat:10},{word:"＃都市＃旅程",heat:20},{word:"这是很长的上游标题".repeat(8)},{word:"山海",heat:5}]);
-    assert(terms.map(item=>item.word).join(',') === "都市,成长,冒险,旅程,山海" && terms[0].heat === 20, "hashtag bundles split into distinct concise terms and duplicate heat keeps the maximum");
     const adapted = videoPage({ origin: "https://example.invalid", section: "original", page: 2, html: `<script>window.__listingScriptRan=true</script><iframe src="https://should-not-load.invalid/"></iframe>
       <div class="hg-card-grid is-active" data-channel-panel="drama" data-panel-total="40"><div class="hg-drama-card" data-track-item-id="101" data-track-title="山海 &amp; 旅程">
         <div class="hg-drama-card__cover"><a class="hg-drama-card__cover-link" href="/video/101/"><img data-src="/covers/story.jpg" onerror="window.__listingScriptRan=true"></a></div>
@@ -121,13 +118,7 @@ try {
     await click(explore().querySelector('[aria-label="评分优先"]'));
     assert(explore().querySelector('.ref-series-card h3')?.textContent === "latest 第一部", "explore can restore the upstream order after loading more");
     await act(async () => store.openExplore());
-    assert([...explore().querySelectorAll(".ref-hot-word")].every(item => !item.textContent?.includes("#") && !item.textContent?.includes("＃")), "rendered search suggestions are individual clean terms rather than hashtag bundles");
-    const firstWords = document.querySelector(".ref-discovery-page .ref-guess-words")!.textContent;
-    await click(button("换一批", explore()));
-    assert(document.querySelector(".ref-discovery-page .ref-guess-words")!.textContent !== firstWords, "real search words can rotate without placeholder data");
-    await click(explore().querySelector(".ref-guess-words button"));
-    assert(store.tab === "search" && !!store.searchQuery && !/[#＃]/.test(store.searchQuery), "discovery search words reach global search");
-    await act(async () => store.openExplore());
+    assert(!document.querySelector('[aria-label="猜你想搜"]') && !explore().querySelector('.ref-guess-section'), "home and explore omit the removed search-suggestion module");
     for (const item of DISCOVERY_SECTIONS.filter((item) => !["topics", "posts"].includes(item.value))) {
       await click(button(item.label, document.querySelector('[aria-label="探索分区"]')!));
       assert(calls.some((call) => call.command === "api_discover" && call.args.section === item.value) && explore().querySelector(".ref-series-card")?.textContent?.includes(item.value), `${item.value} section requests and renders its own records`);

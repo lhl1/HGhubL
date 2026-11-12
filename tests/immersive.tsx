@@ -89,7 +89,7 @@ try {
   assert(store.theater && player().classList.contains("is-immersive") && hidden(), "entering window immersive mode immediately hides controls");
   assert(!player().querySelector(".desktop-context-header,.desktop-social,.desktop-video-meta,.player-pause-overlay"), "immersive mode removes both top corners, social tools, metadata and pause badge");
   assert(!document.querySelector(".ref-toolbar,.ref-window-actions,.ref-rail,.win-resize"), "window immersive mode removes native toolbar, rail and resize hotspots");
-  assert(getComputedStyle(player().querySelector(".player-info-shade")!).display === "none", "immersive mode removes the information gradient");
+  assert(!player().querySelector(".player-info-shade"), "immersive mode has no information gradient layer");
   assert(getComputedStyle(player()).cursor === "none", "idle immersive mode hides the cursor");
   assert(getComputedStyle(player()).clipPath === "none" && getComputedStyle(originalVideo).borderRadius === "0px" && getComputedStyle(player(), "::after").display === "none", "immersive video removes rounded clipping and decorative edge borders");
   assert(player().querySelector("video") === originalVideo && originalVideo.currentTime === 37 && originalVideo.paused && requests === 1, "presentation changes preserve the media element, source, time and manual pause");
@@ -99,7 +99,11 @@ try {
   assert(!hidden(), "slow cumulative pointer movement still reveals controls");
   await move(120);
   assert(!hidden() && !controls().inert, "deliberate pointer movement reveals usable bottom controls");
+  const cornerBack = player().querySelector<HTMLElement>('.player-immersive-back')!;
+  const cornerBounds = cornerBack.getBoundingClientRect(), immersiveBounds = player().getBoundingClientRect();
+  assert(getComputedStyle(cornerBack).visibility === "visible" && cornerBounds.left - immersiveBounds.left === 16 && cornerBounds.top - immersiveBounds.top === 16 && !controls().querySelector('[aria-label="返回普通窗口"]'), "window immersive return lives at the upper-left instead of the playback bar");
   await waitHide();
+  assert(getComputedStyle(cornerBack).visibility === "hidden" && cornerBack.inert, "upper-left return auto-hides and becomes inert with the playback controls");
   assert(hidden() && originalVideo.paused, "paused immersive video still auto-hides controls after 1.2 seconds");
   await move(135);
   await act(async () => player().querySelector('[aria-label="播放进度"]')!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
@@ -116,7 +120,7 @@ try {
   assert(!store.theater && !document.querySelector('[role="listbox"]') && store.stack.at(-1)?.key === pageKey, "Escape with a focused speed menu exits immersive mode and keeps the player page");
   assert(document.querySelector(".ref-toolbar") && player().querySelector(".desktop-context-header") && !hidden(), "returning restores normal window chrome");
   await enter(); await move(100); await move(130); await click("返回普通窗口");
-  assert(!store.theater && store.stack.at(-1)?.key === pageKey, "bottom return button exits immersive mode without navigating away");
+  assert(!store.theater && store.stack.at(-1)?.key === pageKey, "upper-left return exits window immersive mode without navigating away");
   await enter(); await key("ArrowLeft", { altKey: true });
   assert(!store.theater && store.stack.at(-1)?.key === pageKey, "Alt Left returns to the ordinary window");
   await enter();
@@ -153,6 +157,11 @@ try {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = false;
     document.querySelector<HTMLElement>("#results")!.style.display = "none";
     originalVideo.style.background = "radial-gradient(ellipse at 70% 30%, #64788a, #203c4a 50%, #101e30)";
+    if (preview === "black") {
+      await act(async () => { store.exitImmersive(); });
+      Object.assign(originalVideo.style, { width: "60%", height: "56%", position: "absolute", left: "20%", top: "12%" });
+      await act(async () => player().querySelector('[aria-label="播放进度"]')!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
+    }
     if (preview === "normal") await act(async () => { store.exitImmersive(); });
     if (preview === "episodes" || preview === "rating") {
       await act(async () => { store.exitImmersive(); });
@@ -240,6 +249,20 @@ try {
     const retryMedia = player().querySelector("video"), retryRequests = requests;
     await click("重试选集");
     assert(document.querySelectorAll("[data-episode]").length === 3 && player().querySelector("video") === retryMedia && requests === retryRequests, "episode retry restores the actual list without restarting playback");
+    await click("关闭选集");
+    await act(async()=>store.push({kind:"feed",videoIds:[16],index:0,startEp:2,title:"窗口操作验证"}));
+    await enter();
+    const dragRegion = player().querySelector<HTMLElement>('.player-window-drag')!, dragBounds = dragRegion.getBoundingClientRect();
+    nativeCommands.length = 0;
+    await act(async()=>dragRegion.dispatchEvent(new PointerEvent("pointerdown",{bubbles:true,button:0})));
+    assert(dragBounds.width === player().getBoundingClientRect().width && dragBounds.height === 88 && nativeCommands.some(call=>call.command.endsWith("start_dragging")), "window immersive mode exposes an 88px full-width native drag region");
+    const beforeWheel = requests;
+    for(let pulse=0;pulse<8;pulse++)await act(async()=>player().dispatchEvent(new WheelEvent("wheel",{bubbles:true,cancelable:true,deltaY:120})));
+    assert(requests === beforeWheel + 1 && playRequests.at(-1)?.ep === 3 && playRequests.at(-1)?.id === 16, "one wheel burst changes to exactly the next episode in the current work");
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,750));player().dispatchEvent(new WheelEvent("wheel",{bubbles:true,cancelable:true,deltaY:120}));});
+    assert(requests === beforeWheel + 1, "wheel navigation stops at the last episode instead of changing works");
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,750));player().dispatchEvent(new WheelEvent("wheel",{bubbles:true,cancelable:true,deltaY:-120}));});
+    assert(requests === beforeWheel + 2 && playRequests.at(-1)?.ep === 2, "upward scrolling selects the previous episode after cooldown");
     await act(async () => root.unmount());
     document.querySelector("#results")!.textContent = JSON.stringify({ passed: true, count: checks.length, checks }, null, 2);
   }

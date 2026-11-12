@@ -36,7 +36,6 @@
 .ref-discovery-tabs button[aria-current="page"], .ref-discovery-tabs button[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
 .ref-discovery-tabs button:hover { color: var(--accent); }
 .ref-discovery-results .ref-results-heading > div:first-child { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
-.ref-guess-words small { color: var(--muted); font-size: 10px; margin-left: 5px; }
 .ref-topic-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(240px,1fr)); gap: 22px; }
 .ref-topic-card { text-align: left; min-width: 0; }
 .ref-topic-cover { position: relative; aspect-ratio: 1.8; overflow: hidden; background: var(--panel); border-radius: 12px; }
@@ -85,7 +84,6 @@
   .ref-topic-intro { flex-wrap: wrap; gap: 12px; padding: 15px; }
   .ref-topic-intro > div { width: 100%; max-height: 220px; }
   .ref-topic-intro p { flex-basis: 100%; }
-  .ref-guess-words { flex-wrap: wrap; }
   .ref-home-footer { align-items: flex-start; flex-direction: column; }
 }
 @media(max-width:420px) {

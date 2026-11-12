@@ -8,7 +8,7 @@ import { rankingCards } from "../discovery";
 import { catalogCategories } from "../catalog";
 import type { VideoCard } from "../types";
 import { CatalogSkeleton, Masonry } from "../components/cards";
-import { HotWords, TopicGrid } from "../components/DiscoveryContent";
+import { TopicGrid } from "../components/DiscoveryContent";
 import { Empty, Img } from "../components/ui";
 import { IChevronDown, IChevronUp, IGrid, IPlayF, IRefresh, ISearch, ITrophy } from "../icons";
 
@@ -55,7 +55,6 @@ export default function Home({ active, bottomInset, wide = true }: { active: boo
       <button onClick={() => openExplore("topics")}><IGrid size={19} /><span>专题合集</span></button><button onClick={() => push({ kind: "ranks" })}><ITrophy size={19} /><span>排行榜</span></button>
       <button onClick={() => openExplore("posts")}><IGrid size={19} /><span>图文与剧评</span></button><button onClick={() => setTab("watch")}><IPlayF size={19} /><span>连续放映</span></button>
     </nav>
-    <HotWords />
     <div className="ref-section-heading"><h2>发现好剧</h2><ScoreSort priority={priority} onChange={setPriority} /></div><ScoreSortNote priority={priority} />
     <section className="ref-home-tags" aria-label="热门标签"><div className="ref-section-heading"><h2>热门标签</h2><button onClick={() => setTab("category")}>更多题材 ›</button></div>
       <div>{(metadata.data?.hot || []).slice(0, 16).map((tag) => <button key={tag.slug || tag.id} onClick={() => push({ kind: "tag", slug: tag.slug, title: tag.name })}>{tag.name}</button>)}</div>

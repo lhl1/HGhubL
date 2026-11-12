@@ -1,5 +1,4 @@
 import { ScoreSort, ScoreSortNote } from "./Score";
-import { normalizeHotWords } from "../hot-words";
 import { orderByScore } from "../catalog";
 import { useEffect, useRef, useState } from "react";
 import { api, fmt } from "../api";
@@ -12,25 +11,6 @@ import { CatalogViewSwitch } from "./CatalogLayout";
 import { Empty, Img } from "./ui";
 import LoadMore from "./LoadMore";
 import { IBack, IRefresh, ISearch } from "../icons";
-
-export function HotWords() {
-  const { requestSearch } = useStore(), words = useAsync(async () => {
-    const data = await api.searchHot();
-    const items = normalizeHotWords(Array.isArray(data?.items) ? data.items : []);
-    if (items.length) return { items };
-    const metadata = await api.catalogMetadata();
-    return { items: normalizeHotWords((metadata.hot || []).map(tag => ({ word: tag.name }))) };
-  });
-  const [offset, setOffset] = useState(0);
-  const items = words.data?.items?.filter((item) => item.word) || [];
-  const visible = items.length ? Array.from({ length: Math.min(4, items.length) }, (_, index) => items[(offset + index) % items.length]) : [];
-  return <section className="ref-guess-section" aria-label="猜你想搜"><div className="ref-section-heading"><h2>猜你想搜</h2>
-    <button disabled={items.length <= 4} onClick={() => setOffset((value) => (value + 4) % items.length)}><IRefresh size={14} />换一批</button></div>
-    <div className="ref-guess-words">{visible.map((item) => <button key={item.word} onClick={() => requestSearch(item.word)}><ISearch size={14} /><span className="ref-hot-word" title={item.word}>{item.word}</span><small>{fmt(item.heat)}</small></button>)}
-      {!items.length && <span>{words.loading ? "正在加载热搜" : words.error ? "热搜暂时无法加载" : "暂无热搜"}</span>}
-      {words.error && <button onClick={words.reload}>重试热搜</button>}
-    </div></section>;
-}
 
 export function TopicGrid({ items }: { items: Topic[] }) {
   const { push } = useStore();

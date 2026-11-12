@@ -1,6 +1,6 @@
 /** One trackpad wheel burst advances once, including its decaying inertia. */
-export function createWheelGate() {
-  let lastAt = -Infinity, sum = 0, direction = 0, consumed = false;
+export function createWheelGate(minInterval = 0) {
+  let lastAt = -Infinity, lastEmittedAt = -Infinity, sum = 0, direction = 0, consumed = false;
   return (delta: number, at: number, blocked = false): -1 | 0 | 1 => {
     if (!Number.isFinite(delta) || !delta) return 0;
     const sign = Math.sign(delta);
@@ -11,6 +11,8 @@ export function createWheelGate() {
     sum += Math.abs(delta);
     if (sum < 65) return 0;
     consumed = true;
+    if (at - lastEmittedAt < minInterval) return 0;
+    lastEmittedAt = at;
     return sign as -1 | 1;
   };
 }

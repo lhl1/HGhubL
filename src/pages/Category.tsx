@@ -16,24 +16,19 @@ export function ChannelPage({ cate, name, onBack, wide }: { cate: string; name: 
   return <CatalogBrowser initialCategory={cate} name={name} onBack={onBack} wide={wide} />;
 }
 function CatalogBrowser({ initialCategory = "", name, onBack, wide }: { initialCategory?: string; name?: string; onBack?: () => void; wide: boolean }) {
-  const { push, requestSearch } = useStore();
+  const { push } = useStore();
   const metadata = useAsync(() => api.catalogMetadata());
   const [category, setCategory] = useState(initialCategory), [sort, setSort] = useState("");
   const [selected, setSelected] = useState<Record<string, string>>({}), [finished, setFinished] = useState("");
-  const [wordOffset, setWordOffset] = useState(0);
   const { items, loading, error, loadMore, hasMore, reset } = usePaged((page) => api.catalog(category, sort === "score" ? "" : sort, page, 24), [category, sort === "score" ? "" : sort]);
   useEffect(() => { setCategory(initialCategory); }, [initialCategory]);
   const categories = catalogCategories(metadata.data);
-  const words = (metadata.data?.hot || []).filter((tag) => tag.name);
   const filtered = useMemo(() => orderByScore(filterCatalog(items, selected, finished), sort === "score"), [items, selected, finished, sort]);
   const resetAll = () => { if (category === initialCategory && !sort) reset(); setCategory(initialCategory); setSort(""); setSelected({}); setFinished(""); };
   return <div className="absolute inset-0 scroll-y ref-page-scroll"><section className="ref-catalog-page" aria-busy={loading}>
     <div className="ref-explore-shortcuts"><button onClick={() => push({ kind: "ranks" })}><ITrophy size={19} />排行榜</button>
       <button onClick={() => { if (!sort) reset(); else setSort(""); }}><IRefresh size={18} />最近更新</button>
       <button onClick={() => push({ kind: "posts" })}><IGrid size={19} />图文社区</button>
-    </div>
-    <div className="ref-guess-section"><div className="ref-section-heading"><h2>猜你想搜</h2><button disabled={!words.length} onClick={() => setWordOffset((value) => (value + 4) % words.length)}><IRefresh size={14} />换一批</button></div>
-      <div className="ref-guess-words">{words.length ? words.slice(wordOffset, wordOffset + 4).map((tag) => <button key={tag.id} onClick={() => requestSearch(tag.name)}><ISearch size={14} /><span className="ref-hot-word" title={tag.name}>{tag.name}</span></button>) : <span>选择分类，发现你的下一部好剧</span>}</div>
     </div>
     <header className="ref-filter-page-heading"><div>{onBack && <button aria-label="返回" onClick={onBack}><IBack size={18} /></button>}<div><h2>{name || "分类筛选"}</h2><p>找到合你心意的好剧</p></div></div>
       <button onClick={resetAll}><IRefresh size={14} />重置</button></header>

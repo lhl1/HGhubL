@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, cover, fmt, fmtTime, mediaUrl, platform } from "../api";
 import type { Detail, Episode, Post, VideoCard } from "../types";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useStore } from "../store";
 import { Avatar, Img, Sheet } from "./ui";
 import VideoSurface, { type VideoHandle } from "./VideoSurface";
@@ -61,6 +62,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
   const [rate, setRate] = useState(preferences.defaultRate);
   const recovery = useRef(createRecoveryBudget());
   const wheelGate = useRef(createWheelGate());
+  const episodeWheelGate = useRef(createWheelGate(700));
   const automaticEpisode = useRef<string | null>(null);
   const [waiting, setWaiting] = useState(false);
   const [err, setErr] = useState("");
@@ -225,23 +227,28 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
   // A single trackpad gesture advances one item; panel and control scrolling stay local.
   useEffect(() => {
     const box = boxRef.current;
-    if (!isDesktop || !active || !box) return;
+    const surface = box?.parentElement;
+    if (!isDesktop || !active || !box || !surface) return;
     const wheel = (event: WheelEvent) => {
       if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
       const target = event.target as HTMLElement;
       const blocked = !!panel || !!target.closest("button,input,select,[role='listbox'],.desktop-controls");
-      const direction = wheelGate.current(event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? box.clientHeight : 1), performance.now(), blocked);
+      const direction = (theater ? episodeWheelGate : wheelGate).current(event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? box.clientHeight : 1), performance.now(), blocked);
       if (blocked) return;
       event.preventDefault();
       if (direction) {
+        if (theater) {
+          if (episodes.some((episode) => episode.ep_num === curEp + direction)) pickEp(curEp + direction);
+          return;
+        }
         if (fullscreen && episodes.some((episode) => episode.ep_num === curEp + direction)) pickEp(curEp + direction);
         else go(direction);
       }
     };
-    box.addEventListener("wheel", wheel, { passive: false });
-    return () => box.removeEventListener("wheel", wheel);
+    surface.addEventListener("wheel", wheel, { passive: false });
+    return () => surface.removeEventListener("wheel", wheel);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDesktop, active, panel, fullscreen, curEp, episodes, go]);
+  }, [isDesktop, active, panel, fullscreen, theater, curEp, episodes, go]);
 
   /* 拉详情（当前 + 邻接预取） */
   useEffect(() => {
@@ -575,11 +582,6 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
       onPointerDown={(event) => { if (isDesktop) chrome.reveal(); if (event.target === boxRef.current) viewport.allowNavigation(); }}
       onPointerLeave={() => { if (immersive) chrome.hide(); }}
       onKeyDown={(event) => { if (isDesktop && event.key !== "Escape") chrome.reveal(); }}>
-      {/* 氛围背景 */}
-      <div className="absolute inset-0 scale-110 blur-3xl opacity-25 pointer-events-none">
-        {posterUrl && <img src={posterUrl} alt="" className="w-full h-full object-cover" />}
-      </div>
-
       <div ref={boxRef} onScroll={onScroll}
         className="player-feed-viewport absolute inset-y-0 left-0 overflow-y-scroll no-bar snap-y snap-mandatory overscroll-y-contain"
         style={{ right: isDesktop && panel ? 372 : 0, transition: "right .3s cubic-bezier(.2,0,0,1)" }}>
@@ -626,10 +628,6 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
                   </button>
                 </div>
               )}
-
-              {/* 渐变压暗，保证文字可读 */}
-              <div className="absolute inset-0 pointer-events-none player-info-shade"
-                style={{ background: "linear-gradient(0deg, rgba(8,11,15,.86) 0, rgba(11,14,20,.18) 26%, transparent 48%)" }} />
 
               {/* 顶部 */}
               {!fs && !immersive && mode === "context" ? (
@@ -745,11 +743,9 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
               </div>
               )}
 
-              {/* 移动端：标题 + 详情标签 + 进度线（不加底色，只铺一层柔和压暗保证可读） */}
+              {/* 移动端：标题 + 详情标签 + 进度线 */}
               {!fs && !isDesktop && (
                 <div className="absolute inset-x-0 z-20" style={{ bottom: `calc(var(--sab, 0px) + ${bottomInset}px)` }}>
-                  <div className="absolute inset-x-0 bottom-0 h-[190px] pointer-events-none"
-                    style={{ background: "linear-gradient(0deg, rgba(0,0,0,.82) 0%, rgba(0,0,0,.42) 45%, transparent 100%)" }} />
                   <p className="relative px-4 pb-2 text-[14px] font-semibold leading-snug hg-ink hg-ov-shadow clamp-2">{meta.title}</p>
                   <div className="relative pt-1.5 pb-2.5">
                     <button onClick={() => setPanel("detail")}
@@ -810,6 +806,16 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
         })}
       </div>
 
+      {isDesktop && theater && !fullscreen && !store.nativeFullscreen && <div className="player-window-drag" aria-hidden="true"
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          event.preventDefault(); event.stopPropagation();
+          void getCurrentWindow().startDragging().catch(() => {});
+        }} />}
+      {isDesktop && theater && !fullscreen && !store.nativeFullscreen && <button type="button"
+        className={`player-immersive-back ${idle || !active ? "is-hidden" : ""}`} aria-label="返回普通窗口" title="返回普通窗口 Esc"
+        inert={idle || !active} aria-hidden={idle || !active} onFocus={chrome.reveal}
+        onClick={(event) => { event.stopPropagation(); store.exitImmersive(); }}><IBack size={20} /></button>}
       {/* 桌面控制条 */}
       {isDesktop && (
         <PlayerControls
@@ -820,7 +826,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
           onToolsOpen={closePanel}
           rating={kind === "video" ? rating : undefined}
           episodeControl={kind === "video" ? { videoId: curId, episodes, current: curEp, loading: !detail && !detailErrors[curId], error: detailErrors[curId], onPick: pickEp, onRetry: () => setDetailRetry((value) => value + 1) } : undefined}
-          onExitImmersive={immersive ? () => { store.exitImmersive(); } : undefined}
+          onExitImmersive={immersive && (!theater || fullscreen || store.nativeFullscreen) ? () => { store.exitImmersive(); } : undefined}
           previousDisabled={!episodes.some((episode) => episode.ep_num === curEp - 1)} onPrevious={() => pickEp(curEp - 1)}
           nextDisabled={!episodes.some((e) => e.ep_num === curEp + 1) && index >= videoIds.length - 1}
           nextTitle={episodes.some((e) => e.ep_num === curEp + 1) ? "下一集 E" : "下一部 ↓"}

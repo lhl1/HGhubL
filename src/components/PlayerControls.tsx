@@ -2,7 +2,7 @@ import { fmtTime } from "../api";
 import { IBack, ICompress, IExpand, INext, IPauseF, IPip, IPlayF, ITheater, IVol, IVolMute } from "../icons";
 import SelectMenu from "./SelectMenu";
 import { PLAYBACK_RATES } from "../preferences";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PlayerEpisodes, PlayerRating, type EpisodeControl } from "./PlayerTools";
 import type { VideoRatingState } from "../ratings";
 
@@ -45,14 +45,18 @@ export default function PlayerControls({
   visible = true, nextDisabled = false, previousDisabled = false, nextTitle = "下一个", onToggle, onSeek, onRate, onMute, onVolume, onPip, onTheater, onFullscreen, onNext, onPrevious,
   onExitImmersive, onActivity, onMenuOpenChange, episodeControl, rating, onToolsOpen,
 }: Props) {
-  const pct = duration ? Math.min(100, (time / duration) * 100) : 0;
+  const [seekPreview, setSeekPreview] = useState<number | null>(null);
+  const seekPointer = useRef<number | null>(null);
+  const shownTime = seekPreview ?? time;
+  const pct = duration ? Math.min(100, shownTime / duration * 100) : 0;
+  const cancelSeek = () => { seekPointer.current = null; setSeekPreview(null); };
   const [menuOpen, setMenuOpen] = useState(false), [dragging, setDragging] = useState(false);
   const [episodesOpen, setEpisodesOpen] = useState(false), [ratingOpen, setRatingOpen] = useState(false);
   const toolOpen = menuOpen || episodesOpen || ratingOpen;
   useEffect(() => { onMenuOpenChange?.(toolOpen || dragging); }, [toolOpen, dragging, onMenuOpenChange]);
   useEffect(() => { if (toolOpen) onToolsOpen?.(); }, [toolOpen, onToolsOpen]);
   useEffect(() => {
-    const release = () => setDragging(false);
+    const release = () => { setDragging(false); cancelSeek(); };
     window.addEventListener("pointerup", release); window.addEventListener("pointercancel", release);
     window.addEventListener("blur", release); window.addEventListener("hg-exit-immersive", release);
     return () => {
@@ -74,10 +78,25 @@ export default function PlayerControls({
           <span className="desktop-seek-buffer" style={{ width: `${Math.min(1, buffered) * 100}%` }} />
           <span className="desktop-seek-played" style={{ width: `${pct}%` }} />
         </div>
-        <input aria-label="播放进度" aria-valuetext={`${clock(time)} / ${clock(duration)}`} disabled={duration <= 0} type="range" min={0} max={duration || 1} step={0.1} value={Math.min(time, duration || 0)}
-          onChange={(e) => onSeek(Number(e.target.value))}
+        <input aria-label="播放进度" aria-valuetext={`${clock(shownTime)} / ${clock(duration)}`} disabled={duration <= 0} type="range" min={0} max={duration || 1} step={0.1} value={Math.min(shownTime, duration || 0)}
+          onPointerDown={(event) => {
+            if (event.button !== 0 || duration <= 0) return;
+            seekPointer.current = event.pointerId; setSeekPreview(time);
+            try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* Native range still handles release. */ }
+          }}
+          onChange={(event) => {
+            const value = Number(event.currentTarget.value);
+            if (seekPointer.current !== null) setSeekPreview(value);
+            else onSeek(value);
+          }}
+          onPointerUp={(event) => {
+            if (seekPointer.current !== event.pointerId) return;
+            const value = Number(event.currentTarget.value);
+            cancelSeek(); onSeek(value);
+          }}
+          onPointerCancel={cancelSeek} onLostPointerCapture={cancelSeek}
           onKeyDown={(event) => {
-            if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); event.stopPropagation(); onSeek(Math.max(0, Math.min(duration, time + (event.key === "ArrowLeft" ? -5 : 5)))); }
+            if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); event.stopPropagation(); onSeek(Math.max(0, Math.min(duration, shownTime + (event.key === "ArrowLeft" ? -5 : 5)))); }
           }} />
       </div>
 
@@ -92,7 +111,7 @@ export default function PlayerControls({
             <INext size={18} strokeWidth={1.7} />
           </button>
         )}
-        <span className="player-timecode"><span>{clock(time)}</span><span className="player-time-separator">/</span>{clock(duration)}</span>
+        <span className="player-timecode"><span>{clock(shownTime)}</span><span className="player-time-separator">/</span>{clock(duration)}</span>
         <div className="player-control-spacer" />
         {rating && <PlayerRating key={`rating:${episodeControl?.videoId}`} state={rating} visible={visible} onOpenChange={setRatingOpen} />}
         {episodeControl && <PlayerEpisodes key={`episodes:${episodeControl.videoId}`} control={episodeControl} visible={visible} onOpenChange={setEpisodesOpen} />}

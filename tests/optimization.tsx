@@ -8,6 +8,7 @@ import { createRecoveryBudget, createWheelGate, mergeUnique } from "../src/playb
 import { useAsync, usePaged } from "../src/hooks";
 import Feed from "../src/components/Feed";
 import VideoSurface, { type VideoHandle } from "../src/components/VideoSurface";
+import PlayerControls from "../src/components/PlayerControls";
 import SelectMenu from "../src/components/SelectMenu";
 import Search from "../src/pages/Search";
 import type { Detail, PlayInfo, VideoCard } from "../src/types";
@@ -61,6 +62,10 @@ try {
   assert(gate(150, 80) === 0 && gate(30, 180) === 0, "wheel inertia cannot skip multiple videos");
   assert(gate(80, 450) === 1 && gate(-80, 470) === -1, "new gestures and reversed gestures work");
   assert(gate(100, 800, true) === 0 && gate(100, 850) === 0, "scrolling a panel consumes that gesture");
+  const episodeGate = createWheelGate(700);
+  assert(episodeGate(120, 0) === 1 && episodeGate(120, 100) === 0 && episodeGate(120, 350) === 0, "episode wheel gating rejects both inertia and closely spaced follow-up notches");
+  assert(episodeGate(120, 1000) === 1 && episodeGate(-120, 1100) === 0, "episode switching cooldown also prevents accidental immediate direction reversals");
+  assert(episodeGate(-120, 1900) === -1, "a deliberate previous-episode gesture works after cooldown");
   const budget = createRecoveryBudget();
   assert(budget.take() && budget.take() && !budget.take(), "automatic recovery stops after two attempts");
   budget.progress(0); budget.progress(100); assert(!budget.take(), "a seek cannot refill recovery budget");
@@ -115,8 +120,9 @@ try {
   assert(!store.preview && store.stack[0]?.kind === "feed" && store.stack[0].startTime === 15, "preview starts the selected episode at its resume position");
   await clear();
 
+  const observedTimes: number[] = [];
   const handle = React.createRef<VideoHandle>(); let setIntent!: (intent: boolean) => void;
-  function SurfaceProbe({ active }: { active: boolean }) { const [wanted, update] = useState(true); setIntent = update; return <VideoSurface ref={handle} src={info(1).video_url} active={active} autoPlay={wanted} onIntent={update} />; }
+  function SurfaceProbe({ active }: { active: boolean }) { const [wanted, update] = useState(true); setIntent = update; return <VideoSurface ref={handle} src={info(1).video_url} active={active} autoPlay={wanted} onIntent={update} onTime={(value)=>observedTimes.push(value)} />; }
   playCount = 0;
   await render(<SurfaceProbe active={false} />);
   assert(playCount === 0, "an inactive page never starts after source resolution");
@@ -125,6 +131,14 @@ try {
   await render(<SurfaceProbe active={false} />); await render(<SurfaceProbe active />);
   assert(playCount === afterPause && handle.current!.el()!.paused, "manual pause survives navigation away and back");
   await act(async () => setIntent(true)); assert(playCount > afterPause, "explicit play resumes a manually paused video");
+  const seekingVideo = handle.current!.el()!;
+  await act(async () => handle.current!.seek(80));
+  seconds.set(seekingVideo, 12);
+  await act(async () => seekingVideo.dispatchEvent(new Event("timeupdate")));
+  assert(observedTimes.at(-1) === 80, "late pre-seek progress cannot roll the displayed timeline back");
+  seconds.set(seekingVideo, 80);
+  await act(async () => seekingVideo.dispatchEvent(new Event("seeked")));
+  assert(observedTimes.at(-1) === 80 && !seekingVideo.paused, "seek completion retains the target and original playback intent");
   const previousVideo = handle.current!.el()!; await clear();
   assert(!sources.has(previousVideo), "teardown releases media sources and pending work");
 
@@ -151,6 +165,26 @@ try {
   await setInput("丙"); await act(async () => input.form!.requestSubmit()); await click("清空搜索");
   await act(async () => searches.get("丙")!.resolve({ items: [card(3, "已清空结果")], pagination: { page: 1, pages: 1, size: 20, total: 1 }, keyword: "丙" }));
   assert(!document.body.textContent?.includes("已清空结果"), "clearing search invalidates an outstanding request");
+  await clear();
+
+  const seeks: number[] = [];
+  const props = { paused: false, time: 10, duration: 120, rate: 1, muted: false, volume: 1, onToggle() {}, onSeek(value:number) { seeks.push(value); }, onRate() {}, onMute() {}, onVolume() {}, onPip() {}, onFullscreen() {} };
+  await render(<PlayerControls {...props} />);
+  const timeline = document.querySelector<HTMLInputElement>('[aria-label="播放进度"]')!;
+  const changeTimeline = async (value:number) => { await act(async()=>{ Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value")!.set!.call(timeline,String(value)); timeline.dispatchEvent(new Event("input",{bubbles:true})); }); };
+  await act(async()=>timeline.dispatchEvent(new PointerEvent("pointerdown",{bubbles:true,pointerId:7,button:0})));
+  await changeTimeline(30); await changeTimeline(75);
+  assert(seeks.length === 0 && timeline.value === "75", "dragging previews its target without repeatedly seeking the media");
+  await render(<PlayerControls {...props} time={11} />);
+  assert(timeline.value === "75", "incoming playback progress cannot move the thumb during a drag");
+  await act(async()=>timeline.dispatchEvent(new PointerEvent("pointerup",{bubbles:true,pointerId:7,button:0})));
+  assert(seeks.join(',') === "75", "releasing the timeline commits exactly one final seek");
+  await act(async()=>timeline.dispatchEvent(new PointerEvent("pointerdown",{bubbles:true,pointerId:8,button:0})));
+  await changeTimeline(95);
+  await act(async()=>timeline.dispatchEvent(new PointerEvent("pointercancel",{bubbles:true,pointerId:8})));
+  assert(seeks.length === 1, "canceled timeline gestures never seek to an unintended position");
+  await act(async()=>timeline.dispatchEvent(new KeyboardEvent("keydown",{bubbles:true,cancelable:true,key:"ArrowRight"})));
+  assert(seeks.at(-1) === 16, "keyboard seeking still commits a deliberate five-second step");
   await clear();
 
   await render(<div style={{paddingTop:800,paddingBottom:800}}><SelectMenu label="首次打开验证" value="25" options={Array.from({length:30},(_,i)=>({value:String(i),label:`选项 ${i}`}))} onChange={()=>{}} /></div>);

@@ -346,9 +346,11 @@ input[type="range"].hg-range::-webkit-slider-thumb { -webkit-appearance: none; w
 /* —— 控制条 —— */
 .desktop-controls {
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 25;
-  padding: 0 22px 10px; color: #bcc3cd;
-  background: linear-gradient(0deg, rgba(6,9,13,.82), rgba(6,9,13,.28) 62%, transparent);
-  transition: opacity .25s;
+  padding: 8px 22px 10px; color: #bcc3cd;
+  background: #000;
+  background-image: none;
+  backdrop-filter: none; filter: none; box-shadow: none;
+  transition: none;
 }
 .desktop-controls.is-hidden { opacity: 0; pointer-events: none; }
 .desktop-control-row { display: flex; align-items: center; gap: 5px; height: 38px; }
@@ -357,7 +359,7 @@ input[type="range"].hg-range::-webkit-slider-thumb { -webkit-appearance: none; w
   display: inline-flex; align-items: center; justify-content: center;
   color: #c8ced8; transition: background .16s, color .16s, transform .16s;
 }
-.player-control:hover { background: rgba(255,255,255,.09); color: #fff; }
+.player-control:hover { background: #000; color: #fff; }
 .player-control:active { transform: scale(.94); }
 .player-control:disabled { color: #5e6570; cursor: default; }
 .player-control.is-on { color: var(--p-primary); }
@@ -453,7 +455,7 @@ input[type="range"].hg-range::-webkit-slider-thumb { -webkit-appearance: none; w
 /* 说明：WebView2 里 overflow:hidden 裁视频层不做抗锯齿，必须用 clip-path + 独立合成层 */
 .player-surface {
   border-radius: 12px;
-  background: #15181d;
+  background: #000;
   isolation: isolate;
   overflow: hidden;
   clip-path: inset(0 round 12px);
@@ -470,7 +472,7 @@ input[type="range"].hg-range::-webkit-slider-thumb { -webkit-appearance: none; w
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.055);
 }
 .player-surface .player-root,
-.player-root { background: #15181d; }
+.player-root { background: #000; }
 
 /* —— 安卓沉浸全屏：横屏视频把舞台旋转 90°（不依赖系统旋转） —— */
 .fs-landscape {
@@ -543,7 +545,7 @@ button:focus-visible, input:focus-visible, [tabindex="0"]:focus-visible {
 }
 .hg-select-trigger:hover { background: var(--p-s4); }
 .hg-select-trigger[aria-expanded="true"] { border-color: var(--p-primary); }
-.hg-select-trigger.hg-select-media { min-width: 70px; border-color: transparent; background: transparent; color: white; }
+.hg-select-trigger.hg-select-media { min-width: 70px; border-color: transparent; background: #000; color: white; }
 .hg-select-menu {
   z-index: 75; overflow-y: auto; overscroll-behavior: contain; padding: 6px;
   border: 1px solid color-mix(in srgb, var(--p-on) 12%, transparent); border-radius: 9px;
