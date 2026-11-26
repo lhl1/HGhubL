@@ -231,6 +231,12 @@ try {
   assert(playbackCalls === 4, "disabling automatic next episode stops at the current episode");
   await click("下一集 E"); assert(playbackCalls === 5, "explicit next episode works when automatic next is disabled");
   await click("上一集"); assert(playbackCalls === 6, "previous episode reloads a fresh signed address");
+  await clear();
+
+  api.video = async (id) => ({ ...detail(id), cover: `https://cdn.example/cover-${id}.jpg` });
+  await render(<AppProvider><Feed videoIds={[12, 13]} mode="home" active bottomInset={0} /></AppProvider>);
+  const slideImages = [...document.querySelectorAll("section img")].map((img) => img.getAttribute("src") || "");
+  assert(slideImages.some((src) => src.includes("cover-13.jpg")), "inactive adjacent slide renders its own cover instead of the active slide cover");
 
   document.querySelector("#results")!.textContent = JSON.stringify({ passed: checks.length, failed: 0, checks });
 } catch (error) {

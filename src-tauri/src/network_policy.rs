@@ -184,6 +184,32 @@ pub fn check_addresses_with_mode(addrs: &[SocketAddr], strict: bool) -> Result<(
     Ok(())
 }
 
+pub fn is_teredo(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V6(v6) => {
+            let s = v6.segments();
+            s[0] == 0x2001 && s[1] == 0
+        }
+        IpAddr::V4(_) => false,
+    }
+}
+
+/// 国内直连部分镜像域名时，运营商/DNS 投毒会在返回正常公网 IPv4 的同时注入 `2001::/32`（Teredo）假 AAAA 记录。
+/// 仅当存在其他合法公网/FakeIP 地址时过滤掉 Teredo 地址，防止混合公私网校验误杀可用直连线路；
+/// 若结果仅含 Teredo（或混有普通私网/回环地址），仍由 `check_addresses_with_mode` 拒绝。
+pub fn filter_poisoned_teredo(addrs: Vec<SocketAddr>) -> Vec<SocketAddr> {
+    let has_non_teredo_allowed = addrs
+        .iter()
+        .any(|addr| !is_teredo(addr.ip()) && allowed_ip(addr.ip()));
+    if !has_non_teredo_allowed {
+        return addrs;
+    }
+    addrs
+        .into_iter()
+        .filter(|addr| !is_teredo(addr.ip()))
+        .collect()
+}
+
 pub async fn resolve_target(url: &Url, strict: bool) -> Result<Vec<SocketAddr>, String> {
     let port = url.port_or_known_default().ok_or("目标端口无效")?;
     let mut addrs = match url.host().ok_or("目标缺少主机名")? {
@@ -200,6 +226,9 @@ pub async fn resolve_target(url: &Url, strict: bool) -> Result<Vec<SocketAddr>, 
     };
     addrs.sort_unstable();
     addrs.dedup();
+    if strict {
+        addrs = filter_poisoned_teredo(addrs);
+    }
     check_addresses_with_mode(&addrs, strict)?;
     Ok(addrs)
 }
@@ -366,5 +395,26 @@ mod tests {
         assert!(parse_target_with_mode("http://hg.localhost/img", false).is_err());
         assert!(parse_target_with_mode("http://ipc.localhost/", false).is_err());
         assert!(parse_target_with_mode("javascript:alert(1)", false).is_err());
+    }
+
+    #[test]
+    fn poisoned_teredo_is_filtered_only_when_valid_addresses_exist() {
+        let mixed_teredo = vec![
+            "159.138.20.20:443".parse().unwrap(),
+            "[2001::9df0:a24]:443".parse().unwrap(),
+        ];
+        let filtered = filter_poisoned_teredo(mixed_teredo);
+        assert_eq!(filtered, vec!["159.138.20.20:443".parse::<SocketAddr>().unwrap()]);
+        assert!(check_addresses(&filtered).is_ok());
+
+        let only_teredo = vec!["[2001::1]:443".parse().unwrap()];
+        assert!(check_addresses(&filter_poisoned_teredo(only_teredo)).is_err());
+
+        let mixed_private = vec![
+            "1.1.1.1:443".parse().unwrap(),
+            "192.168.1.1:443".parse().unwrap(),
+            "[2001::1]:443".parse().unwrap(),
+        ];
+        assert!(check_addresses(&filter_poisoned_teredo(mixed_private)).is_err());
     }
 }

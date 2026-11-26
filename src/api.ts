@@ -91,6 +91,8 @@ export const api = {
 
   video: (id: number) => call<Detail>("api_video", { id }),
   play: (id: number, ep: number) => call<PlayInfo>("api_play", { id, ep }),
+  prewarm: (id: number, ep: number, nextId?: number) =>
+    invoke<void>("api_prewarm", { id, ep, nextId: nextId ?? null }).catch(() => {}),
   rating: (id: number) => call<RatingInfo>("api_rating", { id }),
 
   comments: (id: number, ep: number, page = 1, size = 20) =>

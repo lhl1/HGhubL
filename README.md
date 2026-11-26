@@ -23,14 +23,14 @@ HGhubL 在原 HGhub 基础上，集中改进 **播放兼容、无边框窗口、
 
 ## 三步开始
 
-1. 打开 [Releases 下载页](https://github.com/lhl1/HGhubL/releases/latest)，下载 `HGhubL_1.5.9_windows_x64_portable.zip`。**只运行软件，无需下载源码包。**
+1. 打开 [Releases 下载页](https://github.com/lhl1/HGhubL/releases/latest)，下载 `HGhubL_1.6.0_windows_x64_portable.zip`。**只运行软件，无需下载源码包。**
 2. 完整解压到一个文件夹，双击 `HGhub.exe`。请让 `WebView2Loader.dll` 与 EXE 保持同目录。
 3. 默认进入放映；在左侧切换首页、探索、排行榜或分类。外观默认跟随系统，也可在设置中手动切换。
 
 | 文件 | 用途 |
 | --- | --- |
-| `HGhubL_1.5.9_windows_x64_portable.zip` | Windows x64 便携版，解压运行 |
-| `HGhubL_1.5.9_source.zip` | 对应发布提交的源码，供开发与复核 |
+| `HGhubL_1.6.0_windows_x64_portable.zip` | Windows x64 便携版，解压运行 |
+| `HGhubL_1.6.0_source.zip` | 对应发布提交的源码，供开发与复核 |
 | `SHA256SUMS.txt` | 发布文件的 SHA-256 校验值 |
 | `validation.json` | 本次构建与检查范围 |
 
@@ -39,7 +39,7 @@ HGhubL 在原 HGhub 基础上，集中改进 **播放兼容、无边框窗口、
 可用 PowerShell 核对下载文件：
 
 ```powershell
-Get-FileHash .\HGhubL_1.5.9_windows_x64_portable.zip -Algorithm SHA256
+Get-FileHash .\HGhubL_1.6.0_windows_x64_portable.zip -Algorithm SHA256
 ```
 
 将输出与同一 Release 中的 `SHA256SUMS.txt` 对照。升级时先退出旧版，再解压到新目录，保留旧目录便于回退；收藏、记录和设置仍使用原应用标识对应的数据目录。
@@ -111,6 +111,9 @@ flowchart LR
 
 | 现象 | 找到的原因 | 采用的修复 |
 | --- | --- | --- |
+| 推荐 / 列表返回 503“接口已停用” | 上游停用 `/api/edge/request`，改用四作用域加密通道 | 1.6.0 统一接入 `public` / `dynamic` / `playback` / `user` 通道与公开只读快速通道 |
+| 线路失效、代理或直连镜像报错 | `huangguoai.ai` 转为中转页；直连 DNS 注入 `2001::/32` 假记录 | 固定线路 2 改为 `huangguodrama.io`，支持多发布页、代理侧解析与 Teredo 投毒过滤 |
+| 切剧 / 切集有黑闪或首帧等待 | 切集现取址与分片、相邻卡片复用当前封面 | 1.6.0 新增后台单次预热、分片缓存、原地错误恢复与独立封面渲染 |
 | 显示“暂无播放地址”，重试无效 | 上游取址流程变化；旧重试只尝试播放已有元素 | 适配当前播放通道，重新取址并重建失败实例，旧回包按请求代次丢弃 |
 | 点击全屏后刷新或切换视频 | `scrollTop / clientHeight` 在窗口变高后算成另一个视频 | 维护逻辑选中项，尺寸变化时先对齐再恢复滚动吸附 |
 | 播放区域出现两层边框 | 桌面舞台和视频容器都带留白、裁切与装饰 | 移除重复外框，充分使用内容区域；视频保持原比例 |
@@ -175,7 +178,7 @@ Windows GNU 测试环境若缺少 Common Controls v6 manifest，改用：
 ./scripts/test-windows-gnu.ps1
 ```
 
-当前浏览器行为基线为 **277 项**；Rust 离线基线为 **38 通过、10 项联网测试默认忽略**。发布时以 Release 的 `validation.json` 为准。测试中使用模拟媒体和原生窗口桩，**不能视为本轮 Windows 原生全屏按键实机测试**。macOS / Android 也不在本轮发布验证范围内。
+当前浏览器行为基线为 **278 项**；Rust 离线基线为 **46 通过、10 项联网测试默认忽略**。发布时以 Release 的 `validation.json` 为准。测试中使用模拟媒体和原生窗口桩，**不能视为本轮 Windows 原生全屏按键实机测试**。macOS / Android 也不在本轮发布验证范围内。
 
 默认测试不会提交评分、登录真实账号或批量请求上游。联网烟测需单独、按需选择；详情见 [验证说明](docs/verification.md)。
 
@@ -190,9 +193,10 @@ src/                         React / TypeScript 界面
   feed-viewport.ts            尺寸变化时保持当前视频
 src-tauri/src/               Rust 后端
   api.rs                     业务命令与 HGhubL 更新检查
-  playback.rs                当前播放通道及临时会话
+  edge_crypto.rs             dx150-edge-v1 四作用域加密会话通道
+  playback.rs                当前播放通道、临时会话与单次预热
   discovery.rs               公开页面与分区数据源
-  media.rs / cache.rs         媒体协议、HLS 处理与有界缓存
+  media.rs / cache.rs         媒体协议、HLS 处理、分片与有界缓存
   net.rs / network_policy.rs  网络、代理和目标检查
   session.rs                 绑定站点的登录会话
 scripts/                     图标同步、浏览器 / GNU 测试工具

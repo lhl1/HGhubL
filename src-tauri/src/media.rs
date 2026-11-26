@@ -28,6 +28,12 @@ pub const LOCAL_ORIGIN: &str = "hg://localhost";
 const IMG_KEY: &[u8] = b"f5d965df75336270";
 const IMG_IV: &[u8] = b"97b60394abc2fbe1";
 
+#[derive(Clone)]
+struct CachedSegment {
+    ctype: String,
+    body: Arc<Vec<u8>>,
+}
+
 static IMG_CACHE: Lazy<Mutex<BoundedCache<Vec<u8>>>> = Lazy::new(|| {
     Mutex::new(BoundedCache::new(
         240,
@@ -42,6 +48,14 @@ static PL_CACHE: Lazy<Mutex<BoundedCache<String>>> = Lazy::new(|| {
         Duration::from_secs(300),
     ))
 });
+static SEG_CACHE: Lazy<Mutex<BoundedCache<CachedSegment>>> = Lazy::new(|| {
+    Mutex::new(BoundedCache::new(
+        32,
+        24 * 1024 * 1024,
+        Duration::from_secs(180),
+    ))
+});
+const SEG_CACHE_ITEM_MAX: usize = 4 * 1024 * 1024;
 type RequestLocks = HashMap<String, Weak<tokio::sync::Mutex<()>>>;
 static REQUEST_LOCKS: Lazy<Mutex<RequestLocks>> = Lazy::new(|| Mutex::new(HashMap::new()));
 
@@ -282,7 +296,7 @@ fn absolutize_uri_in_attr(base: &str, line: &str) -> String {
     map_uri_attributes(line, |uri| absolutize(base, uri))
 }
 
-/// 清空封面 / 播放列表内存缓存
+/// 清空封面 / 播放列表 / 分片内存缓存
 pub fn clear_caches() {
     if let Ok(mut g) = IMG_CACHE.lock() {
         g.clear();
@@ -290,6 +304,102 @@ pub fn clear_caches() {
     if let Ok(mut g) = PL_CACHE.lock() {
         g.clear();
     }
+    if let Ok(mut g) = SEG_CACHE.lock() {
+        g.clear();
+    }
+}
+
+fn is_playlist_payload(ctype: Option<&str>, bytes: &[u8]) -> bool {
+    ctype.is_some_and(|t| t.to_ascii_lowercase().contains("mpegurl"))
+        || bytes.starts_with(b"#EXTM3U")
+        || bytes.starts_with(b"\xef\xbb\xbf#EXTM3U")
+}
+
+async fn fetch_or_cached_segment(target: &str) -> Result<(Option<String>, Vec<u8>, bool), String> {
+    if let Some(hit) = SEG_CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(target, Instant::now())
+    {
+        return Ok((Some(hit.ctype.clone()), hit.body.as_ref().clone(), true));
+    }
+    let lock = request_lock(format!("seg:{target}"));
+    let _guard = lock.lock().await;
+    if let Some(hit) = SEG_CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(target, Instant::now())
+    {
+        return Ok((Some(hit.ctype.clone()), hit.body.as_ref().clone(), true));
+    }
+    let generation = SEG_CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .generation();
+    let (ctype, bytes) = fetch_bytes(target).await?;
+    if !is_playlist_payload(ctype.as_deref(), &bytes) && bytes.len() <= SEG_CACHE_ITEM_MAX {
+        let entry = Arc::new(CachedSegment {
+            ctype: ctype
+                .clone()
+                .unwrap_or_else(|| "application/octet-stream".to_string()),
+            body: Arc::new(bytes.clone()),
+        });
+        let size = bytes.len();
+        SEG_CACHE.lock().unwrap_or_else(|e| e.into_inner()).insert(
+            target.to_string(),
+            entry,
+            size,
+            Instant::now(),
+            generation,
+        );
+    }
+    Ok((ctype, bytes, false))
+}
+
+fn extract_proxied_target(line: &str) -> Option<String> {
+    let idx = line.find("/seg?u=")?;
+    let rest = &line[idx + 7..];
+    let encoded = rest.split(['"', '\'', ' ', '\r', '\n']).next()?;
+    let decoded = dec(encoded);
+    (!decoded.is_empty()).then_some(decoded)
+}
+
+/// 预热 HLS 清单、AES 密钥与首个分片到内存缓存，降低切集/切剧首帧等待。
+pub async fn prewarm_hls(url: &str, origin: &str) {
+    let Ok(playlist) = load_playlist(url, origin).await else {
+        return;
+    };
+    let mut key_uri: Option<String> = None;
+    let mut first_seg: Option<String> = None;
+    for line in playlist.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.starts_with("#EXT-X-KEY") || trimmed.starts_with("#EXT-X-MAP") {
+            if key_uri.is_none() {
+                key_uri = extract_proxied_target(trimmed);
+            }
+        } else if !trimmed.starts_with('#') {
+            if first_seg.is_none() {
+                first_seg = extract_proxied_target(trimmed);
+            }
+        }
+        if key_uri.is_some() && first_seg.is_some() {
+            break;
+        }
+    }
+    let key_fut = async {
+        if let Some(ref k) = key_uri {
+            let _ = fetch_or_cached_segment(k).await;
+        }
+    };
+    let seg_fut = async {
+        if let Some(ref s) = first_seg {
+            let _ = fetch_or_cached_segment(s).await;
+        }
+    };
+    tokio::join!(key_fut, seg_fut);
 }
 
 /* ───────────────────────── 协议响应 ───────────────────────── */
@@ -369,8 +479,8 @@ pub async fn handle(path: &str, query: &str, origin: &str) -> Response<Vec<u8>> 
             ),
             Err(e) => respond(502, "text/plain", e.into_bytes(), "no-store"),
         },
-        "/seg" => match fetch_bytes(&target).await {
-            Ok((ctype, bytes)) => segment_response(&target, ctype.as_deref(), bytes, origin),
+        "/seg" => match fetch_or_cached_segment(&target).await {
+            Ok((ctype, bytes, _)) => segment_response(&target, ctype.as_deref(), bytes, origin),
             Err(e) => respond(502, "text/plain", e.into_bytes(), "no-store"),
         },
         _ => respond(404, "text/plain", b"not found".to_vec(), "no-store"),
@@ -541,6 +651,31 @@ mod tests {
         let stripped = strip_padding(decrypted);
         assert_eq!(stripped, plain);
         assert_eq!(image_kind(&stripped), Some("image/jpeg"));
+    }
+
+    #[test]
+    fn segment_cache_stores_small_segments_and_clears_cleanly() {
+        clear_caches();
+        let entry = Arc::new(CachedSegment {
+            ctype: "video/mp2t".to_string(),
+            body: Arc::new(vec![1, 2, 3, 4]),
+        });
+        {
+            let mut cache = SEG_CACHE.lock().unwrap();
+            let gen = cache.generation();
+            cache.insert("https://cdn.example/seg1.ts".to_string(), entry, 4, Instant::now(), gen);
+            assert!(cache.get("https://cdn.example/seg1.ts", Instant::now()).is_some());
+        }
+        clear_caches();
+        assert!(SEG_CACHE
+            .lock()
+            .unwrap()
+            .get("https://cdn.example/seg1.ts", Instant::now())
+            .is_none());
+        assert_eq!(
+            extract_proxied_target(&format!("{LOCAL_ORIGIN}/seg?u=https%3A%2F%2Fcdn.example%2Fkey.bin")),
+            Some("https://cdn.example/key.bin".to_string())
+        );
     }
 
     /// 联网测试：默认跳过。封面地址带时效签名，不能硬编码进仓库，

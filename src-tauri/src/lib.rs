@@ -1,6 +1,7 @@
 mod api;
 mod cache;
 mod discovery;
+mod edge_crypto;
 mod lines;
 mod media;
 mod net;
@@ -146,6 +147,7 @@ pub fn run() {
             api::api_post_comments,
             api::api_video,
             api::api_play,
+            api::api_prewarm,
             api::api_comments,
             api::api_rating,
             api::api_comment_send,

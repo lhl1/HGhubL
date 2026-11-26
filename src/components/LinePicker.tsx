@@ -117,7 +117,7 @@ export default function LinePicker({ open, onClose }: { open: boolean; onClose: 
       <div className="flex-1 scroll-y px-3 pb-4">
         <div className="flex items-center gap-2 px-1 mt-1 mb-1.5">
           <span className="text-[10.5px] font-semibold text-dim tracking-wide">固定线路</span>
-          <span className="text-[10px] text-dim">需代理 / 非大陆网络</span>
+          <span className="text-[10px] text-dim">主站 / 备用官方线路</span>
           <button onClick={() => probe(fixed, "fixed")} disabled={busyAll || !fixed.length}
             className="ml-auto text-[10.5px] text-primary pressable disabled:opacity-50">
             {probing === "fixed" ? "检测中…" : "全部检测"}

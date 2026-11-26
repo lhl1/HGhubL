@@ -1,8 +1,8 @@
-//! 线路（数据源）：固定线路 + 地址发布页上的镜像线路。
+//! 线路（数据源）：固定线路 + 地址发布页/中转页上的镜像线路。
 //!
 //! 上游只是域名在变，请求链路与数据模型完全一致，所以「切线路」等价于换 `net::base()`。
-//! 镜像地址来自 <https://huangguoai.pages.dev/>：那个页面本身是空壳，真正的清单在
-//! `publish.js` 里（`var urls` 域名数组 + `var subdomains` 子域数组，页面自己随机拼）。
+//! 镜像地址优先从官方发布页（`huangguo88.pages.dev` / `huang-guo.pages.dev` / `huangguoai.pages.dev`）
+//! 的 `publish.js` 解析，全部不可达时回退到官方中转页（`hgai42.com` / `huangguoai.ai`）。
 
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
@@ -10,10 +10,16 @@ use std::time::{Duration, Instant};
 /// 固定线路：写死在客户端里，不依赖任何外部页面。
 pub const FIXED: [(&str, &str); 2] = [
     ("固定线路 1", "https://huangguoai.com"),
-    ("固定线路 2", "https://huangguoai.ai"),
+    ("固定线路 2", "https://huangguodrama.io"),
 ];
 
-const PUBLISH_PAGE: &str = "https://huangguoai.pages.dev/";
+const PUBLISH_PAGES: [&str; 3] = [
+    "https://huangguo88.pages.dev/",
+    "https://huang-guo.pages.dev/",
+    "https://huangguoai.pages.dev/",
+];
+const TRANSIT_PAGES: [&str; 2] = ["https://hgai42.com/", "https://huangguoai.ai/"];
+const TRANSIT_SUBDOMAINS: [&str; 6] = ["thu", "pku", "fdu", "sjtu", "zju", "nju"];
 /// 镜像列表上限（子域 × 域名是笛卡尔积，界面只展示这么多）
 const MIRROR_MAX: usize = 60;
 /// 单条线路探测超时
@@ -26,19 +32,7 @@ pub fn fixed() -> Value {
         .collect::<Vec<_>>())
 }
 
-/// 拉地址发布页 → 解析 publish.js → 拼出镜像地址。只在用户点开「线路」时调用。
-pub async fn mirrors() -> Result<Value, String> {
-    let html = get_text(PUBLISH_PAGE).await?;
-    let js_rel = script_src(&html).unwrap_or_else(|| "publish.js".to_string());
-    let js_url = absolute(PUBLISH_PAGE, &js_rel);
-    let js = get_text(&js_url).await?;
-
-    let domains = js_array(&js, "var urls");
-    let subs = js_array(&js, "var subdomains");
-    if domains.is_empty() {
-        return Err("地址发布页格式有变化：没找到镜像域名".to_string());
-    }
-
+fn build_mirror_items(domains: Vec<String>, subs: Vec<String>) -> Vec<Value> {
     let mut items: Vec<Value> = Vec::new();
     let mut seen = std::collections::HashSet::new();
     'outer: for domain in domains {
@@ -52,6 +46,9 @@ pub async fn mirrors() -> Result<Value, String> {
             subs.iter().map(|s| format!("{s}.{domain}")).collect()
         };
         for host in hosts {
+            if crate::net::normalize_base(&format!("https://{host}")).is_none() {
+                continue;
+            }
             if !seen.insert(host.clone()) {
                 continue;
             }
@@ -61,11 +58,89 @@ pub async fn mirrors() -> Result<Value, String> {
             }
         }
     }
+    items
+}
+
+fn extract_attr_values(html: &str, attr: &str) -> Vec<String> {
+    let needle = format!("{attr}=\"");
+    let mut out = Vec::new();
+    let mut rest = html;
+    while let Some(i) = rest.find(&needle) {
+        let after = &rest[i + needle.len()..];
+        let Some(end) = after.find('"') else {
+            break;
+        };
+        let value = after[..end].trim();
+        if !value.is_empty() {
+            out.push(value.to_string());
+        }
+        rest = &after[end + 1..];
+    }
+    out
+}
+
+fn parse_transit_mirrors(html: &str) -> Vec<Value> {
+    let mut items = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for host in extract_attr_values(html, "data-route-share-host") {
+        if crate::net::normalize_base(&format!("https://{host}")).is_some()
+            && seen.insert(host.clone())
+        {
+            items.push(json!({ "url": format!("https://{host}"), "host": host }));
+        }
+    }
+    let tails = extract_attr_values(html, "data-route-prefix-tail");
+    let subs: Vec<String> = TRANSIT_SUBDOMAINS.iter().map(|s| s.to_string()).collect();
+    for item in build_mirror_items(tails, subs) {
+        if let Some(host) = item["host"].as_str() {
+            if seen.insert(host.to_string()) {
+                items.push(item);
+                if items.len() >= MIRROR_MAX {
+                    break;
+                }
+            }
+        }
+    }
+    items
+}
+
+async fn try_publish_page(page: &str) -> Result<Value, String> {
+    let html = get_text(page).await?;
+    let js_rel = script_src(&html).unwrap_or_else(|| "publish.js".to_string());
+    let js_url = absolute(page, &js_rel);
+    let js = get_text(&js_url).await?;
+
+    let domains = js_array(&js, "var urls");
+    let subs = js_array(&js, "var subdomains");
+    if domains.is_empty() {
+        return Err("地址发布页格式有变化：没找到镜像域名".to_string());
+    }
+    let items = build_mirror_items(domains, subs);
     if items.is_empty() {
         return Err("地址发布页里没有可用的镜像地址".to_string());
     }
+    Ok(json!({ "source": page, "script": js_url, "items": items }))
+}
 
-    Ok(json!({ "source": PUBLISH_PAGE, "script": js_url, "items": items }))
+/// 拉地址发布页 → 解析 publish.js → 拼出镜像地址（失败自动尝试备用发布页与中转页）。
+/// 只在用户点开「线路」时调用。
+pub async fn mirrors() -> Result<Value, String> {
+    let mut last_err = String::from("镜像线路获取失败");
+    for page in PUBLISH_PAGES {
+        match try_publish_page(page).await {
+            Ok(v) => return Ok(v),
+            Err(e) => last_err = e,
+        }
+    }
+    for page in TRANSIT_PAGES {
+        if let Ok(html) = get_text(page).await {
+            let items = parse_transit_mirrors(&html);
+            if !items.is_empty() {
+                return Ok(json!({ "source": page, "items": items }));
+            }
+        }
+    }
+    Err(last_err)
 }
 
 /// 可达性探测（并发 6 条一组）。只报结果，不做自动切换。
@@ -86,28 +161,33 @@ pub async fn probe(urls: Vec<String>) -> Value {
     json!(out)
 }
 
+/// 真实探测线路的公共业务接口（而非只看 `/` 是否返回 200，避免中转页被误判为可用站点）。
 async fn probe_one(url: String) -> Value {
-    let target = format!("{}/", url.trim_end_matches('/'));
+    let Some(origin) = crate::net::normalize_base(&url) else {
+        return json!({ "url": url, "ok": false, "ms": 0, "error": "线路地址无效" });
+    };
     let started = Instant::now();
-    let res = crate::net::get(
-        &target,
+    let res = tokio::time::timeout(
         PROBE_TIMEOUT,
-        Some("text/html,application/xhtml+xml"),
-        None,
+        crate::net::edge(&origin, "GET", "/api/site/categories/video", None, None),
     )
     .await;
     let ms = started.elapsed().as_millis() as u64;
     match res {
-        Ok(r) => {
-            let status = r.status().as_u16();
-            json!({ "url": url, "ok": status < 400, "status": status, "ms": ms })
+        Ok(Ok(_)) => json!({ "url": url, "ok": true, "status": 200, "ms": ms }),
+        Ok(Err(e)) => {
+            let status = e
+                .strip_prefix("HTTP ")
+                .and_then(|s| s.split(|c: char| !c.is_ascii_digit()).next())
+                .and_then(|d| d.parse::<u16>().ok());
+            json!({ "url": url, "ok": false, "status": status, "ms": ms, "error": e })
         }
-        Err(e) => json!({ "url": url, "ok": false, "ms": ms, "error": e }),
+        Err(_) => json!({ "url": url, "ok": false, "ms": ms, "error": "请求超时" }),
     }
 }
 
 async fn get_text(url: &str) -> Result<String, String> {
-    let resp = crate::net::get(url, Duration::from_secs(12), None, None).await?;
+    let resp = crate::net::get(url, Duration::from_secs(8), None, None).await?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {}", resp.status()));
     }
@@ -237,6 +317,14 @@ var foreverUrls = [
     }
 
     #[test]
+    fn parses_transit_route_cards() {
+        let html = r#"<article data-route-share-host="dc5.aqkmowihz.cc" data-route-prefix-tail="aqkmowihz.cc"></article>"#;
+        let items = parse_transit_mirrors(html);
+        assert!(items.iter().any(|i| i["host"] == "dc5.aqkmowihz.cc"));
+        assert!(items.iter().any(|i| i["host"] == "thu.aqkmowihz.cc"));
+    }
+
+    #[test]
     fn resolves_relative_script() {
         assert_eq!(
             absolute("https://huangguoai.pages.dev/", "publish.js?20261103-2"),
@@ -270,8 +358,9 @@ var foreverUrls = [
     async fn probe_live() {
         let urls = vec![
             "https://huangguoai.com".to_string(),
+            "https://huangguodrama.io".to_string(),
             "https://huangguoai.ai".to_string(),
-            "https://thu.xxbgwypx.cc".to_string(),
+            "https://thu.aqkmowihz.cc".to_string(),
         ];
         println!(
             "{}",

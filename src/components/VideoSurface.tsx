@@ -2,6 +2,9 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 import type Hls from "hls.js";
 import { isLocalMedia, mediaUrl } from "../api";
 
+let hlsModulePromise: Promise<typeof import("hls.js")> | null = null;
+const loadHls = () => (hlsModulePromise ??= import("hls.js"));
+
 export type VideoHandle = {
   el: () => HTMLVideoElement | null; play: () => void; pause: () => void; toggle: () => void;
   seek: (time: number) => void; rate: (rate: number) => void; mute: (muted: boolean) => void; volume: (volume: number) => void;
@@ -9,7 +12,8 @@ export type VideoHandle = {
 type Props = {
   src: string; poster?: string; autoPlay?: boolean; active?: boolean; enhancedBuffer?: boolean;
   muted?: boolean; loop?: boolean; fit?: "contain" | "cover"; volume?: number; rate?: number;
-  onTime?: (time: number) => void; onDuration?: (duration: number) => void; onSize?: (width: number, height: number) => void;
+  onTime?: (time: number) => void; onDuration?: (duration: number) => void; onBuffered?: (ratio: number) => void;
+  onSize?: (width: number, height: number) => void; onReady?: () => void;
   onPlaying?: () => void; onPause?: () => void; onWaiting?: () => void; onEnded?: () => void;
   onError?: (message: string) => void; onClick?: () => void; onIntent?: (playing: boolean) => void;
   onResumeRequired?: () => void; className?: string;
@@ -26,6 +30,18 @@ const VideoSurface = forwardRef<VideoHandle, Props>(function VideoSurface(props,
   const [ready, setReady] = useState(false);
   const visible = () => callbacks.current.active !== false && document.visibilityState !== "hidden";
   const report = (message: string) => callbacks.current.onError?.(message);
+  const reportBuffered = (video: HTMLVideoElement) => {
+    const dur = video.duration;
+    if (!Number.isFinite(dur) || dur <= 0 || !video.buffered?.length) return;
+    const now = video.currentTime || 0;
+    let end = 0;
+    for (let i = 0; i < video.buffered.length; i++) {
+      const s = video.buffered.start(i), e = video.buffered.end(i);
+      if (now >= s - 0.5 && now <= e + 0.5) { end = e; break; }
+      if (e > end) end = e;
+    }
+    callbacks.current.onBuffered?.(Math.max(0, Math.min(1, end / dur)));
+  };
   const start = () => {
     if (!visible() || !wanted.current) return;
     window.clearTimeout(releaseTimer.current);
@@ -93,6 +109,7 @@ const VideoSurface = forwardRef<VideoHandle, Props>(function VideoSurface(props,
     const video = videoRef.current; if (!video || !src) return;
     let disposed = false, failed = false;
     let lastTime = -1, lastProgress = performance.now();
+    let netRecoveries = 0, mediaRecoveries = 0;
     pendingSeek.current = null; released.current = false; setReady(false); applySettings();
     const url = isLocalMedia(src) ? src : mediaUrl(src);
     const fail = (message: string) => {
@@ -100,20 +117,33 @@ const VideoSurface = forwardRef<VideoHandle, Props>(function VideoSurface(props,
       failed = true; hlsRef.current?.stopLoad(); report(message);
     };
     if (url.includes("/hls?u=")) {
-      void import("hls.js").then(({ default: Hls }) => {
+      void loadHls().then(({ default: Hls }) => {
         if (disposed) return;
         if (!Hls.isSupported()) { video.src = url; start(); return; }
         const enhanced = callbacks.current.enhancedBuffer !== false;
         const hls = new Hls({
           interstitialsController: undefined, contentSteeringController: undefined, enableInterstitialPlayback: false,
-          enableWorker: true, maxBufferLength: enhanced ? 60 : 20, maxMaxBufferLength: 90,
+          enableWorker: true, startFragPrefetch: true, lowLatencyMode: false, maxBufferHole: 0.5,
+          maxBufferLength: enhanced ? 60 : 20, maxMaxBufferLength: 90,
           maxBufferSize: (enhanced ? 32 : 20) * 1024 * 1024, backBufferLength: 15,
-          manifestLoadingTimeOut: 15000, manifestLoadingMaxRetry: 2, levelLoadingMaxRetry: 2, fragLoadingMaxRetry: 3,
+          manifestLoadingTimeOut: 15000, manifestLoadingMaxRetry: 3, manifestLoadingRetryDelay: 300,
+          levelLoadingMaxRetry: 3, fragLoadingTimeOut: 20000, fragLoadingMaxRetry: 4, fragLoadingRetryDelay: 300,
         });
         hlsRef.current = hls;
         hls.on(Hls.Events.MANIFEST_PARSED, start);
         hls.on(Hls.Events.ERROR, (_event, error) => {
-          if (error.fatal) fail(`播放中断 · ${error.details}`);
+          if (!error.fatal || disposed || failed) return;
+          if (error.type === Hls.ErrorTypes.NETWORK_ERROR && netRecoveries < 1) {
+            netRecoveries += 1;
+            hls.startLoad();
+            return;
+          }
+          if (error.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveries < 1) {
+            mediaRecoveries += 1;
+            hls.recoverMediaError();
+            return;
+          }
+          fail(`播放中断 · ${error.details}`);
         });
         hls.loadSource(url); hls.attachMedia(video);
       }).catch(() => fail("播放器组件加载失败，请重试"));
@@ -133,20 +163,27 @@ const VideoSurface = forwardRef<VideoHandle, Props>(function VideoSurface(props,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src]);
 
-  return <video ref={videoRef} poster={poster} playsInline loop={loop} preload="metadata"
+  return <video ref={videoRef} poster={poster} playsInline loop={loop} preload="auto"
     onClick={props.onClick} className={`w-full h-full bg-black ${fit === "cover" ? "object-cover" : "object-contain"} ${className}`}
-    style={{ opacity: ready || poster ? 1 : 0, transition: "opacity .25s" }}
-    onLoadedData={() => { setReady(true); applySettings(); }}
+    style={{ opacity: ready || poster ? 1 : 0, transition: "opacity .16s ease-out" }}
+    onLoadedData={(event) => { setReady(true); callbacks.current.onReady?.(); applySettings(); reportBuffered(event.currentTarget); }}
+    onCanPlay={(event) => {
+      reportBuffered(event.currentTarget);
+      if (wanted.current && visible() && !event.currentTarget.paused) callbacks.current.onPlaying?.();
+    }}
+    onProgress={(event) => reportBuffered(event.currentTarget)}
     onLoadedMetadata={(event) => {
       const video = event.currentTarget; applySettings();
       callbacks.current.onDuration?.(Number.isFinite(video.duration) ? video.duration : 0);
       callbacks.current.onSize?.(video.videoWidth, video.videoHeight);
+      reportBuffered(video);
       start();
     }}
     onTimeUpdate={(event) => {
       const current = event.currentTarget.currentTime, pending = pendingSeek.current;
       if (pending && Math.abs(current - pending.time) > .75 && performance.now() - pending.at < 3000) return;
       if (pending && !event.currentTarget.seeking) pendingSeek.current = null;
+      reportBuffered(event.currentTarget);
       callbacks.current.onTime?.(current);
     }}
     onSeeked={(event) => {
@@ -154,7 +191,7 @@ const VideoSurface = forwardRef<VideoHandle, Props>(function VideoSurface(props,
       if (!pending || Math.abs(current - pending.time) <= .75) { pendingSeek.current = null; callbacks.current.onTime?.(current); }
     }}
     onPause={() => callbacks.current.onPause?.()} onWaiting={() => callbacks.current.onWaiting?.()}
-    onPlaying={() => callbacks.current.onPlaying?.()}
+    onPlaying={() => { setReady(true); callbacks.current.onReady?.(); callbacks.current.onPlaying?.(); }}
     onError={(event) => { if (event.currentTarget.error && event.currentTarget.hasAttribute("src")) report(`媒体加载失败 (${event.currentTarget.error.code})`); }}
     onEnded={() => callbacks.current.onEnded?.()} />;
 });

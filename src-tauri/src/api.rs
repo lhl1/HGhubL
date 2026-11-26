@@ -442,6 +442,32 @@ pub async fn api_play(state: State<'_, Api>, id: i64, ep: u32) -> Result<Value, 
     Ok(data)
 }
 
+/// 后台预热下一集与下一部作品的播放地址及首帧分片，不阻塞前端交互。
+#[tauri::command]
+pub async fn api_prewarm(
+    state: State<'_, Api>,
+    id: i64,
+    ep: u32,
+    next_id: Option<i64>,
+) -> Result<(), String> {
+    let origin = base();
+    let token = state.session.token(&origin);
+    tauri::async_runtime::spawn(async move {
+        let ep_fut = async {
+            if id > 0 && ep > 0 {
+                crate::playback::prewarm(&origin, id, ep, token.as_deref()).await;
+            }
+        };
+        let next_fut = async {
+            if let Some(nid) = next_id.filter(|&v| v > 0) {
+                crate::playback::prewarm(&origin, nid, 1, token.as_deref()).await;
+            }
+        };
+        tokio::join!(ep_fut, next_fut);
+    });
+    Ok(())
+}
+
 /* ───────────────────────── 评论 / 互动 ───────────────────────── */
 
 fn rating_path(id: i64) -> Result<String, String> {

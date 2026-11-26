@@ -20,6 +20,7 @@ import {
 
 type Props = {
   videoIds: number[];
+  initialCards?: VideoCard[];
   startIndex?: number;
   title?: string;
   mode: "home" | "context";
@@ -37,7 +38,7 @@ const RATES = [1, 1.25, 1.5, 2];
 
 const stripHtml = (s: string) => s.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
 
-export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind = "video", active, bottomInset, onBack, onNearEnd, startEp, startTime }: Props) {
+export default function Feed({ videoIds, initialCards, startIndex = 0, title = "", mode, kind = "video", active, bottomInset, onBack, onNearEnd, startEp, startTime }: Props) {
   const store = useStore();
   const { isLiked, isFav, toggleLikeLocal, toggleFavLocal, toggleFollowLocal, muted, setMuted, volume, setVolume, toast, addHistory, user, setLoginOpen, preferences } = store;
   const isDesktop = platform !== "android";
@@ -51,7 +52,13 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
   const [detailRetry, setDetailRetry] = useState(0);
   const [playSource, setPlaySource] = useState<{ key: string; url: string } | null>(null);
   const [playAttempt, setPlayAttempt] = useState(0);
-  const [cards, setCards] = useState<Record<number, VideoCard>>({});
+  const [videoReady, setVideoReady] = useState(false);
+  const prewarmedRef = useRef("");
+  const cards = useMemo(() => {
+    const map: Record<number, VideoCard> = {};
+    if (initialCards) for (const item of initialCards) map[item.id] = item;
+    return map;
+  }, [initialCards]);
   const [posts, setPosts] = useState<Record<number, Post>>({});
 
   const [time, setTime] = useState(0);
@@ -142,6 +149,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
   /* 观看进度：onTime 里每 5 秒落一次；退出播放页时再用 liveRef 兜一次 */
   const onTimeTick = (t: number) => {
     recovery.current.progress(t);
+    setWaiting(false);
     liveRef.current = { id: curId, ep: curEp, dur: duration, t };
     setTime(t);
     const now = Date.now();
@@ -255,7 +263,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
   useEffect(() => {
     if (kind !== "video") return;
     let alive = true;
-    const need = [videoIds[index], videoIds[index + 1], videoIds[index - 1]].filter(Boolean);
+    const need = [videoIds[index], videoIds[index + 1], videoIds[index - 1], videoIds[index + 2]].filter(Boolean);
     need.forEach((id) => {
       if (details[id]) return;
       setDetailErrors((previous) => { if (!previous[id]) return previous; const next = { ...previous }; delete next[id]; return next; });
@@ -309,6 +317,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
     automaticEpisode.current = null; recovery.current.reset();
     liveRef.current = { id: curId, ep: curEp, t: 0, dur: 0 };
     lastSaveRef.current = 0;
+    setVideoReady(false);
     setTime(0); setDuration(0); setBuffered(0); setErr(""); setWaiting(kind === "video"); setPaused(!autoplay); setWantPlay(autoplay); setDescOpen(false);
     setVsize({ w: 0, h: 0 });
     return () => {
@@ -593,6 +602,12 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
               {isActive && playUrl ? (
                 <div className="absolute inset-0" style={{ touchAction: "pan-y" }}
                   onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
+                {!videoReady && kind === "video" && meta.cover && (
+                  <div className="absolute inset-0 pointer-events-none">
+                    <Img src={meta.cover} eager />
+                    <div className="absolute inset-0" style={{ background: "rgba(0,0,0,.22)" }} />
+                  </div>
+                )}
                 <VideoSurface key={`${playKey}:${playAttempt}`} ref={videoRef} src={playUrl} poster={posterUrl} autoPlay={wantPlay} active={active} muted={muted}
                   enhancedBuffer={preferences.enhancedBuffer} onIntent={setWantPlay} onResumeRequired={() => retryPlayback(true, true)}
                   volume={volume} rate={effRate}
@@ -600,8 +615,21 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
                   onClick={() => { if (isDesktop) videoRef.current?.toggle(); }}
                   onTime={onTimeTick}
                   onDuration={onDurationTick}
+                  onBuffered={setBuffered}
+                  onReady={() => setVideoReady(true)}
                   onSize={(w, h) => setVsize({ w, h })}
-                  onPlaying={() => { setPaused(false); setWaiting(false); setErr(""); }}
+                  onPlaying={() => {
+                    setVideoReady(true); setPaused(false); setWaiting(false); setErr("");
+                    if (kind === "video" && active && preferences.enhancedBuffer) {
+                      const nextEp = episodes.some((e) => e.ep_num === curEp + 1) ? curEp + 1 : 0;
+                      const nextVid = videoIds[index + 1];
+                      const stamp = `${playKey}:${nextEp}:${nextVid || 0}`;
+                      if ((nextEp > 0 || nextVid) && prewarmedRef.current !== stamp) {
+                        prewarmedRef.current = stamp;
+                        void api.prewarm(curId, nextEp, nextVid);
+                      }
+                    }
+                  }}
                   onPause={() => { setPaused(true); saveProgress(); }}
                   onWaiting={() => setWaiting(true)}
                   onEnded={() => {
@@ -614,7 +642,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
                 </div>
               ) : (
                 <div className="absolute inset-0">
-                  <Img src={detail?.cover || cards[vid]?.cover || posts[vid]?.cover || ""} eager={Math.abs(i - index) <= 1} />
+                  <Img src={details[vid]?.cover || cards[vid]?.cover || posts[vid]?.cover || ""} eager={Math.abs(i - index) <= 2} />
                   <div className="absolute inset-0" style={{ background: "rgba(0,0,0,.25)" }} />
                 </div>
               )}
